@@ -46,20 +46,52 @@ class SerialReader(QThread):
         super().__init__()
         self.ser = ser
         self._running = True
+        self._buf = bytearray()   # buffer acumulador
 
     def run(self):
         while self._running:
             try:
-                if self.ser and self.ser.is_open and self.ser.in_waiting:
-                    byte = self.ser.read(1)
-                    val = byte[0]
-                    desc = RESPONSES.get(val, "desconocido")
-                    msg = f"← 0x{val:02X}  ({desc})"
-                    self.data_received.emit(msg)
-                self.msleep(20)
+                if self.ser and self.ser.is_open:
+                    waiting = self.ser.in_waiting
+                    if waiting:
+                        chunk = self.ser.read(waiting)
+                        self._buf.extend(chunk)
+                        self._flush_buffer()
+                self.msleep(15)
             except Exception as e:
                 self.connection_lost.emit()
                 break
+
+    def _flush_buffer(self):
+        """
+        Estrategia mixta:
+        - Si el buffer contiene bytes imprimibles/CRLF → texto
+        - Si contiene un byte conocido del protocolo (no imprimible) → binario
+        Se acumula hasta \n o hasta que no haya más datos.
+        """
+        while self._buf:
+            # ¿Hay una línea de texto completa?
+            for sep in (b'\r\n', b'\n'):
+                idx = self._buf.find(sep)
+                if idx != -1:
+                    line = self._buf[:idx]
+                    self._buf = self._buf[idx + len(sep):]
+                    text = line.decode('latin-1', errors='replace').strip()
+                    if text:
+                        self.data_received.emit(f"← TEXT: {text}")
+                    return  # procesar de a una línea
+
+            # ¿Primer byte es un byte de protocolo conocido (no ASCII imprimible)?
+            b = self._buf[0]
+            is_printable = (0x20 <= b <= 0x7E) or b in (0x09, 0x0A, 0x0D)
+            if not is_printable:
+                self._buf.pop(0)
+                desc = RESPONSES.get(b, "desconocido")
+                self.data_received.emit(f"← BIN: 0x{b:02X}  [{desc}]")
+                return
+
+            # Byte imprimible pero sin \n todavía → esperar más datos
+            break
 
     def stop(self):
         self._running = False
@@ -94,12 +126,20 @@ class ESP32Tester(QMainWindow):
         self.port_combo.setMinimumWidth(140)
         self.baud_combo = QComboBox()
         self.baud_combo.addItems(["9600", "19200", "57600", "115200", "230400"])
-        self.baud_combo.setCurrentText("115200")
+        self.baud_combo.setCurrentText("9600")
 
         self.btn_refresh = QPushButton("↻ Puertos")
         self.btn_connect = QPushButton("Conectar")
         self.btn_connect.setCheckable(True)
         self.btn_connect.setFixedWidth(110)
+
+        self.mode_combo = QComboBox()
+        self.mode_combo.addItems(["MAESTRO (texto)", "SLAVE (binario)"])
+        self.mode_combo.setToolTip(
+            "MAESTRO: envía texto (ping, pwm 1 128…) al ESP32 Maestro via USB\n"
+            "SLAVE: envía bytes binarios [CMD, PIN, VAL] directo al ESP32 Slave"
+        )
+        self.mode_combo.currentIndexChanged.connect(self._on_mode_changed)
 
         self.lbl_status = QLabel("● Desconectado")
         self.lbl_status.setStyleSheet("color: #e74c3c; font-weight: bold;")
@@ -109,6 +149,8 @@ class ESP32Tester(QMainWindow):
         conn_lay.addWidget(QLabel("Baud:"))
         conn_lay.addWidget(self.baud_combo)
         conn_lay.addWidget(self.btn_refresh)
+        conn_lay.addWidget(QLabel("Modo:"))
+        conn_lay.addWidget(self.mode_combo)
         conn_lay.addWidget(self.btn_connect)
         conn_lay.addWidget(self.lbl_status)
         conn_lay.addStretch()
@@ -404,15 +446,45 @@ class ESP32Tester(QMainWindow):
         self._log("[SISTEMA] Conexión perdida", "#f38ba8")
         self._disconnect()
 
+    # ── Modo ───────────────────────────────────────────────────
+    def _is_master_mode(self):
+        return self.mode_combo.currentIndex() == 0
+
+    def _on_mode_changed(self, idx):
+        mode = "MAESTRO (texto)" if idx == 0 else "SLAVE (binario)"
+        self._log(f"[MODO] Cambiado a {mode}", "#f9e2af")
+        if idx == 0:
+            self.raw_input.setPlaceholderText('Ej: "ping"  "pwm 1 200"  "servo 45"  "neo 1"  "reset"')
+        else:
+            self.raw_input.setPlaceholderText('Bytes hex separados por espacio: F0 00 00  ó  01 02 80')
+
+    def _bytes_to_text(self, cmd, pin_id, value):
+        """Convierte triplete de bytes al comando texto del maestro."""
+        if cmd == CMD_PING:    return "ping"
+        if cmd == CMD_RESET:   return "reset"
+        if cmd == CMD_PWM:     return f"pwm {pin_id} {value}"
+        if cmd == CMD_SERVO:   return f"servo {value}"
+        if cmd == CMD_DIGITAL:
+            decimal_pin = (pin_id >> 4) * 10 + (pin_id & 0x0F)
+            return f"digital {decimal_pin} {value}"
+        if cmd == CMD_NEOPIXEL:
+            return f"neo {'ff' if value == 0xFF else value}"
+        return f"raw {cmd} {pin_id} {value}"
+
     # ── Envío de bytes ─────────────────────────────────────────
     def _send_bytes(self, cmd, pin_id, value, label):
         if not self.ser or not self.ser.is_open:
             self._log("[ERROR] No conectado", "#f38ba8")
             return
         try:
-            buf = bytes([cmd, pin_id, value])
-            self.ser.write(buf)
-            self._log(f"→ {label}  [{cmd:#04x} {pin_id:#04x} {value:#04x}]", "#89dceb")
+            if self._is_master_mode():
+                text_cmd = self._bytes_to_text(cmd, pin_id, value)
+                self.ser.write((text_cmd + "\n").encode())
+                self._log(f'→ TEXT: "{text_cmd}"  [{cmd:#04x} {pin_id:#04x} {value:#04x}]', "#89dceb")
+            else:
+                buf = bytes([cmd, pin_id, value])
+                self.ser.write(buf)
+                self._log(f"→ BIN: {label}  [{cmd:#04x} {pin_id:#04x} {value:#04x}]", "#89dceb")
         except Exception as e:
             self._log(f"[ERROR] {e}", "#f38ba8")
 
@@ -424,8 +496,15 @@ class ESP32Tester(QMainWindow):
             self._log("[ERROR] No conectado", "#f38ba8")
             return
         try:
-            self.ser.write((text + "\n").encode())
-            self._log(f'→ RAW: "{text}"', "#cba6f7")
+            if self._is_master_mode():
+                self.ser.write((text + "\n").encode())
+                self._log(f'→ TEXT: "{text}"', "#cba6f7")
+            else:
+                # Interpretar como bytes hex: "F0 00 00"
+                parts = text.split()
+                buf = bytes(int(p, 16) for p in parts)
+                self.ser.write(buf)
+                self._log(f'→ BIN: {" ".join(f"0x{b:02X}" for b in buf)}', "#cba6f7")
             self.raw_input.clear()
         except Exception as e:
             self._log(f"[ERROR] {e}", "#f38ba8")

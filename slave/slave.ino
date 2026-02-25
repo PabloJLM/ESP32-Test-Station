@@ -53,7 +53,7 @@ void sendResponse(uint8_t resp);
 // ─────────────────────────────────────────────────────────────
 void setup() {
   // Serial de control: USB en DevKitC, GPIO1/3 en la custom board
-  Serial.begin(115200);
+  Serial.begin(9600);
 
   // Salidas digitales motores
   pinMode(PIN_M1_AIN1, OUTPUT);

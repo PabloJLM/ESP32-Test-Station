@@ -17,10 +17,10 @@
 
 void setup() {
   // Serial al PC (USB)
-  Serial.begin(115200);
+  Serial.begin(9600);
   
   // Serial al slave (pines alternativos)
-  Serial2.begin(115200, SERIAL_8N1, UART_RX_PIN, UART_TX_PIN);
+  Serial2.begin(9600, SERIAL_8N1, UART_RX_PIN, UART_TX_PIN);
   
   Serial.println("\n=== MASTER para ESP32 Slave ===");
   Serial.printf("UART a Slave: TX=%d, RX=%d\n", UART_TX_PIN, UART_RX_PIN);
