@@ -1,0 +1,3 @@
+# Ignorar archivos de credenciales y tokens
+credentials.json
+token.json
