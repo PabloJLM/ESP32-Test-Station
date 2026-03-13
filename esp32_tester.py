@@ -1,25 +1,62 @@
 #!/usr/bin/env python3
 """
-ESP32 Serial Tester GUI
-Compatible con el protocolo Maestro/Slave de ESP32
-Requiere: pip install pyserial PyQt5
+Tesla Lab — ESP32 Tester
+========================
+Requiere: pip install pyserial PyQt5 opencv-python gspread reportlab pillow
+
+Archivos:
+    esp32_tester.py   ← este archivo (main + config + tester serial)
+    validacion.py     ← pestaña de validación QR + Sheets + PDF
+    qr_generator.py   ← app separada para generar stickers QR
 """
 
 import sys
+import os
+import re
 import serial
 import serial.tools.list_ports
 from datetime import datetime
+
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QGridLayout, QGroupBox, QPushButton, QLabel, QComboBox,
-    QLineEdit, QTextEdit, QSlider, QSpinBox, QSplitter,
-    QFrame, QStatusBar, QSizePolicy
+    QLineEdit, QTextEdit, QSlider, QSplitter, QStatusBar, QTabWidget
 )
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
-from PyQt5.QtGui import QFont, QColor, QTextCursor, QPalette
+from PyQt5.QtCore import Qt, QThread, pyqtSignal
+from PyQt5.QtGui import QFont, QPixmap, QTextCursor
+
+from validacion import TabValidacion
 
 
-# ─── Protocolo ────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════
+#  CONFIGURACIÓN GLOBAL
+# ══════════════════════════════════════════════════════════════
+
+# Google Sheets
+SHEET_ID   = '13WIYurPQvRztU1xpUru8-COzgfdPzqvTP4hEZM6pX2I'
+HEADER_ROW = 1
+COL_ESTADO    = 'A'
+COL_ID        = 'B'
+COL_QR        = 'C'
+COL_TIMESTAMP = 'D'
+COL_NOTAS     = 'E'
+
+SHEET_MAP = {
+    "ESP32":       "ESP32",
+    "ROBOFUT":     "Robofut",
+    "TODOTERRENO": "Todoterreno",
+    "STEM_SR":     "STEM SR",
+    "STEM_JR":     "STEM JR",
+    "DRONES":      "Drones",
+    "IOT":         "IOT",
+}
+
+QR_PATTERN = re.compile(
+    r'^(ESP32|ROBOFUT|TODOTERRENO|STEM_SR|STEM_JR|DRONES|IOT)-BALAM-(\d+)$',
+    re.IGNORECASE
+)
+
+# Protocolo serial Maestro/Slave
 CMD_PWM      = 0x01
 CMD_DIGITAL  = 0x02
 CMD_SERVO    = 0x03
@@ -37,16 +74,57 @@ RESPONSES = {
     0xEE: "ERROR",
 }
 
-# ─── Hilo lector serial ───────────────────────────────────────
+# Stylesheet (Catppuccin Mocha)
+STYLE = """
+QMainWindow, QWidget          { background: #1e1e2e; color: #cdd6f4; font-family: 'Segoe UI', sans-serif; font-size: 12px; }
+QTabWidget::pane              { border: 1px solid #45475a; border-radius: 6px; background: #1e1e2e; }
+QTabBar::tab                  { background: #313244; color: #cdd6f4; padding: 8px 22px;
+                                 border-bottom: 2px solid transparent; font-size: 12px; font-weight: 600; min-width: 160px; }
+QTabBar::tab:selected         { background: #1e1e2e; color: #89b4fa; border-bottom: 2px solid #89b4fa; }
+QTabBar::tab:hover            { background: #45475a; }
+QGroupBox                     { border: 1px solid #45475a; border-radius: 6px; margin-top: 10px;
+                                 font-weight: bold; color: #89b4fa; padding: 6px; }
+QGroupBox::title              { subcontrol-origin: margin; left: 8px; padding: 0 4px; }
+QPushButton                   { background: #313244; color: #cdd6f4; border: 1px solid #45475a;
+                                 border-radius: 5px; padding: 5px 12px; font-size: 12px; }
+QPushButton:hover             { background: #45475a; }
+QPushButton:pressed           { background: #585b70; }
+QPushButton:checked           { background: #a6e3a1; color: #1e1e2e; }
+QPushButton:disabled          { background: #252535; color: #585b70; border-color: #313244; }
+QPushButton[primary="true"]   { background: #2563eb; color: white; border: none; font-weight: 700; }
+QPushButton[primary="true"]:hover     { background: #1d4ed8; }
+QPushButton[primary="true"]:disabled  { background: #1e3a6e; color: #7a9fd6; }
+QPushButton[success="true"]   { background: #14532d; color: #86efac; border: 1px solid #22c55e; font-weight: 700; }
+QPushButton[success="true"]:hover     { background: #166534; }
+QPushButton[danger="true"]    { background: #7f1d1d; color: #fca5a5; border: 1px solid #ef4444; font-weight: 700; }
+QPushButton[danger="true"]:hover      { background: #991b1b; }
+QComboBox, QLineEdit, QSpinBox { background: #313244; color: #cdd6f4; border: 1px solid #45475a;
+                                  border-radius: 4px; padding: 4px 8px; }
+QComboBox:focus, QLineEdit:focus      { border-color: #89b4fa; }
+QComboBox::drop-down          { border: none; }
+QComboBox QAbstractItemView   { background: #313244; color: #cdd6f4; border: 1px solid #45475a; }
+QTextEdit                     { background: #11111b; color: #a6e3a1; border: 1px solid #45475a; border-radius: 4px; }
+QSlider::groove:horizontal    { height: 6px; background: #45475a; border-radius: 3px; }
+QSlider::handle:horizontal    { background: #89b4fa; width: 16px; height: 16px; margin: -5px 0; border-radius: 8px; }
+QSlider::sub-page:horizontal  { background: #89b4fa; border-radius: 3px; }
+QStatusBar                    { background: #181825; color: #6c7086; }
+QSplitter::handle             { background: #45475a; width: 2px; }
+QLabel                        { color: #cdd6f4; }
+"""
+
+
+# ══════════════════════════════════════════════════════════════
+#  HILO LECTOR SERIAL
+# ══════════════════════════════════════════════════════════════
 class SerialReader(QThread):
-    data_received = pyqtSignal(str)
+    data_received   = pyqtSignal(str)
     connection_lost = pyqtSignal()
 
     def __init__(self, ser):
         super().__init__()
-        self.ser = ser
+        self.ser      = ser
         self._running = True
-        self._buf = bytearray()   # buffer acumulador
+        self._buf     = bytearray()
 
     def run(self):
         while self._running:
@@ -54,23 +132,15 @@ class SerialReader(QThread):
                 if self.ser and self.ser.is_open:
                     waiting = self.ser.in_waiting
                     if waiting:
-                        chunk = self.ser.read(waiting)
-                        self._buf.extend(chunk)
+                        self._buf.extend(self.ser.read(waiting))
                         self._flush_buffer()
                 self.msleep(15)
-            except Exception as e:
+            except Exception:
                 self.connection_lost.emit()
                 break
 
     def _flush_buffer(self):
-        """
-        Estrategia mixta:
-        - Si el buffer contiene bytes imprimibles/CRLF → texto
-        - Si contiene un byte conocido del protocolo (no imprimible) → binario
-        Se acumula hasta \n o hasta que no haya más datos.
-        """
         while self._buf:
-            # ¿Hay una línea de texto completa?
             for sep in (b'\r\n', b'\n'):
                 idx = self._buf.find(sep)
                 if idx != -1:
@@ -79,18 +149,12 @@ class SerialReader(QThread):
                     text = line.decode('latin-1', errors='replace').strip()
                     if text:
                         self.data_received.emit(f"← TEXT: {text}")
-                    return  # procesar de a una línea
-
-            # ¿Primer byte es un byte de protocolo conocido (no ASCII imprimible)?
+                    return
             b = self._buf[0]
-            is_printable = (0x20 <= b <= 0x7E) or b in (0x09, 0x0A, 0x0D)
-            if not is_printable:
+            if not ((0x20 <= b <= 0x7E) or b in (0x09, 0x0A, 0x0D)):
                 self._buf.pop(0)
-                desc = RESPONSES.get(b, "desconocido")
-                self.data_received.emit(f"← BIN: 0x{b:02X}  [{desc}]")
+                self.data_received.emit(f"← BIN: 0x{b:02X}  [{RESPONSES.get(b, 'desconocido')}]")
                 return
-
-            # Byte imprimible pero sin \n todavía → esperar más datos
             break
 
     def stop(self):
@@ -98,41 +162,38 @@ class SerialReader(QThread):
         self.wait()
 
 
-# ─── Ventana principal ────────────────────────────────────────
-class ESP32Tester(QMainWindow):
+# ══════════════════════════════════════════════════════════════
+#  PESTAÑA TESTER SERIAL
+# ══════════════════════════════════════════════════════════════
+class TabTester(QWidget):
+    status_msg = pyqtSignal(str)
+
     def __init__(self):
         super().__init__()
-        self.ser = None
+        self.ser    = None
         self.reader = None
-        self.setWindowTitle("ESP32 Serial Tester — Protocolo Maestro/Slave")
-        self.setMinimumSize(900, 680)
         self._build_ui()
-        self._apply_style()
         self._refresh_ports()
 
-    # ── UI ──────────────────────────────────────────────────────
     def _build_ui(self):
-        central = QWidget()
-        self.setCentralWidget(central)
-        root = QVBoxLayout(central)
+        root = QVBoxLayout(self)
         root.setSpacing(8)
         root.setContentsMargins(10, 10, 10, 10)
+        root.addWidget(self._build_conn_bar())
+        root.addWidget(self._build_splitter(), 1)
 
-        # ── Barra conexión ─────────────────────────────────────
-        conn_box = QGroupBox("Conexión Serial")
-        conn_lay = QHBoxLayout(conn_box)
-
+    def _build_conn_bar(self):
+        box = QGroupBox("Conexión Serial")
+        lay = QHBoxLayout(box)
         self.port_combo = QComboBox()
         self.port_combo.setMinimumWidth(140)
         self.baud_combo = QComboBox()
         self.baud_combo.addItems(["9600", "19200", "57600", "115200", "230400"])
         self.baud_combo.setCurrentText("9600")
-
         self.btn_refresh = QPushButton("↻ Puertos")
         self.btn_connect = QPushButton("Conectar")
         self.btn_connect.setCheckable(True)
         self.btn_connect.setFixedWidth(110)
-
         self.mode_combo = QComboBox()
         self.mode_combo.addItems(["MAESTRO (texto)", "SLAVE (binario)"])
         self.mode_combo.setToolTip(
@@ -140,58 +201,42 @@ class ESP32Tester(QMainWindow):
             "SLAVE: envía bytes binarios [CMD, PIN, VAL] directo al ESP32 Slave"
         )
         self.mode_combo.currentIndexChanged.connect(self._on_mode_changed)
-
-        self.lbl_status = QLabel("● Desconectado")
+        self.lbl_status = QLabel("Desconectado")
         self.lbl_status.setStyleSheet("color: #e74c3c; font-weight: bold;")
-
-        conn_lay.addWidget(QLabel("Puerto:"))
-        conn_lay.addWidget(self.port_combo)
-        conn_lay.addWidget(QLabel("Baud:"))
-        conn_lay.addWidget(self.baud_combo)
-        conn_lay.addWidget(self.btn_refresh)
-        conn_lay.addWidget(QLabel("Modo:"))
-        conn_lay.addWidget(self.mode_combo)
-        conn_lay.addWidget(self.btn_connect)
-        conn_lay.addWidget(self.lbl_status)
-        conn_lay.addStretch()
-        root.addWidget(conn_box)
-
-        # ── Splitter: controles | terminal ─────────────────────
-        splitter = QSplitter(Qt.Horizontal)
-        root.addWidget(splitter, 1)
-
-        # Panel izquierdo: controles
-        left = QWidget()
-        left_lay = QVBoxLayout(left)
-        left_lay.setSpacing(8)
-
-        left_lay.addWidget(self._build_quick_commands())
-        left_lay.addWidget(self._build_pwm_panel())
-        left_lay.addWidget(self._build_digital_panel())
-        left_lay.addWidget(self._build_servo_panel())
-        left_lay.addWidget(self._build_neopixel_panel())
-        left_lay.addStretch()
-        splitter.addWidget(left)
-
-        # Panel derecho: terminal
-        right = QWidget()
-        right_lay = QVBoxLayout(right)
-        right_lay.setSpacing(6)
-
-        right_lay.addWidget(self._build_terminal())
-        right_lay.addWidget(self._build_raw_command())
-        splitter.addWidget(right)
-
-        splitter.setSizes([380, 520])
-
-        # Status bar
-        self.status_bar = QStatusBar()
-        self.setStatusBar(self.status_bar)
-        self.status_bar.showMessage("Listo.")
-
-        # Señales
+        lay.addWidget(QLabel("Puerto:"))
+        lay.addWidget(self.port_combo)
+        lay.addWidget(QLabel("Baud:"))
+        lay.addWidget(self.baud_combo)
+        lay.addWidget(self.btn_refresh)
+        lay.addWidget(QLabel("Modo:"))
+        lay.addWidget(self.mode_combo)
+        lay.addWidget(self.btn_connect)
+        lay.addWidget(self.lbl_status)
+        lay.addStretch()
         self.btn_refresh.clicked.connect(self._refresh_ports)
         self.btn_connect.clicked.connect(self._toggle_connection)
+        return box
+
+    def _build_splitter(self):
+        splitter = QSplitter(Qt.Horizontal)
+        left = QWidget()
+        ll   = QVBoxLayout(left)
+        ll.setSpacing(8)
+        ll.addWidget(self._build_quick_commands())
+        ll.addWidget(self._build_pwm_panel())
+        ll.addWidget(self._build_digital_panel())
+        ll.addWidget(self._build_servo_panel())
+        ll.addWidget(self._build_neopixel_panel())
+        ll.addStretch()
+        splitter.addWidget(left)
+        right = QWidget()
+        rl    = QVBoxLayout(right)
+        rl.setSpacing(6)
+        rl.addWidget(self._build_terminal())
+        rl.addWidget(self._build_raw_command())
+        splitter.addWidget(right)
+        splitter.setSizes([380, 520])
+        return splitter
 
     def _build_quick_commands(self):
         box = QGroupBox("Comandos Rápidos")
@@ -203,13 +248,12 @@ class ESP32Tester(QMainWindow):
         return box
 
     def _build_pwm_panel(self):
-        box = QGroupBox("PWM — Motores (0-255)")
+        box  = QGroupBox("PWM — Motores (0-255)")
         grid = QGridLayout(box)
         self._pwm_sliders = {}
         self._pwm_labels  = {}
         for i, motor in enumerate([1, 2, 3, 4]):
-            lbl = QLabel(f"M{motor}:")
-            slider = QSlider(Qt.Horizontal)
+            slider  = QSlider(Qt.Horizontal)
             slider.setRange(0, 255)
             slider.setValue(0)
             val_lbl = QLabel("0")
@@ -221,15 +265,14 @@ class ESP32Tester(QMainWindow):
             slider.valueChanged.connect(lambda v, l=val_lbl: l.setText(str(v)))
             self._pwm_sliders[motor] = slider
             self._pwm_labels[motor]  = val_lbl
-            row = i
-            grid.addWidget(lbl,     row, 0)
-            grid.addWidget(slider,  row, 1)
-            grid.addWidget(val_lbl, row, 2)
-            grid.addWidget(btn,     row, 3)
+            grid.addWidget(QLabel(f"M{motor}:"), i, 0)
+            grid.addWidget(slider,  i, 1)
+            grid.addWidget(val_lbl, i, 2)
+            grid.addWidget(btn,     i, 3)
         return box
 
     def _build_digital_panel(self):
-        box = QGroupBox("Digital — Dirección Motores")
+        box  = QGroupBox("Digital — Dirección Motores")
         grid = QGridLayout(box)
         pins = [
             ("M1 AIN1 (0x11)", 0x11), ("M1 AIN2 (0x12)", 0x12),
@@ -238,7 +281,7 @@ class ESP32Tester(QMainWindow):
             ("M4 AIN1 (0x41)", 0x41), ("M4 AIN2 (0x42)", 0x42),
         ]
         for i, (name, pid) in enumerate(pins):
-            lbl = QLabel(name)
+            lbl   = QLabel(name)
             lbl.setFixedWidth(135)
             b_on  = QPushButton("ON")
             b_off = QPushButton("OFF")
@@ -272,21 +315,18 @@ class ESP32Tester(QMainWindow):
         return box
 
     def _build_neopixel_panel(self):
-        box = QGroupBox("NeoPixel")
-        lay = QHBoxLayout(box)
-        colors = [
-            ("OFF",   "#555555", 0x00),
-            ("ROJO",  "#e74c3c", 0x01),
-            ("VERDE", "#2ecc71", 0x02),
-            ("AZUL",  "#3498db", 0x03),
-            ("BLANCO","#ecf0f1", 0xFF),
+        box  = QGroupBox("NeoPixel")
+        lay  = QHBoxLayout(box)
+        opts = [
+            ("OFF",    "#555555", 0x00), ("ROJO",   "#e74c3c", 0x01),
+            ("VERDE",  "#2ecc71", 0x02), ("AZUL",   "#3498db", 0x03),
+            ("BLANCO", "#ecf0f1", 0xFF),
         ]
-        for label, color, val in colors:
+        for label, color, val in opts:
             btn = QPushButton(label)
             btn.setStyleSheet(
                 f"QPushButton {{ background:{color}; color:{'#111' if val==0xFF else 'white'}; "
                 f"font-weight:bold; border-radius:5px; padding:4px 8px; }}"
-                f"QPushButton:hover {{ opacity:0.85; }}"
             )
             btn.clicked.connect(lambda _, v=val: self._send_neopixel(v))
             lay.addWidget(btn)
@@ -295,15 +335,13 @@ class ESP32Tester(QMainWindow):
     def _build_terminal(self):
         box = QGroupBox("Terminal")
         lay = QVBoxLayout(box)
-
-        header = QHBoxLayout()
-        self.btn_clear = QPushButton("Limpiar")
-        self.btn_clear.setFixedWidth(80)
-        self.btn_clear.clicked.connect(self._clear_terminal)
-        header.addStretch()
-        header.addWidget(self.btn_clear)
-        lay.addLayout(header)
-
+        hdr = QHBoxLayout()
+        btn_cl = QPushButton("Limpiar")
+        btn_cl.setFixedWidth(80)
+        btn_cl.clicked.connect(self._clear_terminal)
+        hdr.addStretch()
+        hdr.addWidget(btn_cl)
+        lay.addLayout(hdr)
         self.terminal = QTextEdit()
         self.terminal.setReadOnly(True)
         self.terminal.setFont(QFont("Courier New", 10))
@@ -312,10 +350,8 @@ class ESP32Tester(QMainWindow):
         return box
 
     def _build_raw_command(self):
-        box = QGroupBox("Comando Raw (texto directo al maestro)")
+        box = QGroupBox("Comando Raw")
         lay = QVBoxLayout(box)
-
-        # Ejemplos
         examples = QHBoxLayout()
         for ex in ["ping", "pwm 1 128", "servo 90", "neo 1", "digital 11 1", "reset"]:
             btn = QPushButton(ex)
@@ -323,75 +359,19 @@ class ESP32Tester(QMainWindow):
             btn.clicked.connect(lambda _, t=ex: self.raw_input.setText(t))
             examples.addWidget(btn)
         lay.addLayout(examples)
-
-        send_row = QHBoxLayout()
+        row = QHBoxLayout()
         self.raw_input = QLineEdit()
-        self.raw_input.setPlaceholderText('Ej: "pwm 1 200"  o  "servo 45"  o  "ping"')
+        self.raw_input.setPlaceholderText('"pwm 1 200"  o  "servo 45"  o  "ping"')
         self.raw_input.returnPressed.connect(self._send_raw)
         btn_send = QPushButton("Enviar ↵")
         btn_send.setFixedWidth(90)
         btn_send.clicked.connect(self._send_raw)
-        send_row.addWidget(self.raw_input)
-        send_row.addWidget(btn_send)
-        lay.addLayout(send_row)
+        row.addWidget(self.raw_input)
+        row.addWidget(btn_send)
+        lay.addLayout(row)
         return box
 
-    # ── Estilo ─────────────────────────────────────────────────
-    def _apply_style(self):
-        self.setStyleSheet("""
-            QMainWindow, QWidget { background: #1e1e2e; color: #cdd6f4; }
-            QGroupBox {
-                border: 1px solid #45475a;
-                border-radius: 6px;
-                margin-top: 10px;
-                font-weight: bold;
-                color: #89b4fa;
-                padding: 6px;
-            }
-            QGroupBox::title { subcontrol-origin: margin; left: 8px; padding: 0 4px; }
-            QPushButton {
-                background: #313244;
-                color: #cdd6f4;
-                border: 1px solid #45475a;
-                border-radius: 5px;
-                padding: 5px 12px;
-                font-size: 12px;
-            }
-            QPushButton:hover { background: #45475a; }
-            QPushButton:pressed { background: #585b70; }
-            QPushButton:checked { background: #a6e3a1; color: #1e1e2e; }
-            QComboBox, QLineEdit, QSpinBox {
-                background: #313244;
-                color: #cdd6f4;
-                border: 1px solid #45475a;
-                border-radius: 4px;
-                padding: 4px 8px;
-            }
-            QComboBox::drop-down { border: none; }
-            QTextEdit {
-                background: #11111b;
-                color: #a6e3a1;
-                border: 1px solid #45475a;
-                border-radius: 4px;
-            }
-            QSlider::groove:horizontal {
-                height: 6px;
-                background: #45475a;
-                border-radius: 3px;
-            }
-            QSlider::handle:horizontal {
-                background: #89b4fa;
-                width: 16px;
-                height: 16px;
-                margin: -5px 0;
-                border-radius: 8px;
-            }
-            QSlider::sub-page:horizontal { background: #89b4fa; border-radius: 3px; }
-            QStatusBar { background: #181825; color: #6c7086; }
-            QSplitter::handle { background: #45475a; width: 2px; }
-        """)
-
-    # ── Serial ─────────────────────────────────────────────────
+    # ── Serial ──────────────────────────────────────────────────
     def _refresh_ports(self):
         self.port_combo.clear()
         ports = serial.tools.list_ports.comports()
@@ -401,29 +381,26 @@ class ESP32Tester(QMainWindow):
             self.port_combo.addItem("(sin puertos)")
 
     def _toggle_connection(self, checked):
-        if checked:
-            self._connect()
-        else:
-            self._disconnect()
+        self._connect() if checked else self._disconnect()
 
     def _connect(self):
         port = self.port_combo.currentText()
         baud = int(self.baud_combo.currentText())
         try:
-            self.ser = serial.Serial(port, baud, timeout=0.1)
+            self.ser    = serial.Serial(port, baud, timeout=0.1)
             self.reader = SerialReader(self.ser)
-            self.reader.data_received.connect(self._on_received)
+            self.reader.data_received.connect(lambda m: self._log(m, "#a6e3a1"))
             self.reader.connection_lost.connect(self._on_lost)
             self.reader.start()
             self.lbl_status.setText("● Conectado")
             self.lbl_status.setStyleSheet("color: #a6e3a1; font-weight: bold;")
             self.btn_connect.setText("Desconectar")
-            self.status_bar.showMessage(f"Conectado a {port} @ {baud}")
+            self.status_msg.emit(f"Conectado a {port} @ {baud}")
             self._log(f"[SISTEMA] Conectado a {port} @ {baud} baud", "#89b4fa")
         except Exception as e:
             self.btn_connect.setChecked(False)
-            self._log(f"[ERROR] No se pudo conectar: {e}", "#f38ba8")
-            self.status_bar.showMessage(f"Error: {e}")
+            self._log(f"[ERROR] {e}", "#f38ba8")
+            self.status_msg.emit(f"Error: {e}")
 
     def _disconnect(self):
         if self.reader:
@@ -432,46 +409,38 @@ class ESP32Tester(QMainWindow):
         if self.ser and self.ser.is_open:
             self.ser.close()
         self.ser = None
-        self.lbl_status.setText("● Desconectado")
+        self.lbl_status.setText("Desconectado")
         self.lbl_status.setStyleSheet("color: #e74c3c; font-weight: bold;")
         self.btn_connect.setText("Conectar")
         self.btn_connect.setChecked(False)
         self._log("[SISTEMA] Desconectado", "#f9e2af")
-        self.status_bar.showMessage("Desconectado.")
-
-    def _on_received(self, msg):
-        self._log(msg, "#a6e3a1")
+        self.status_msg.emit("Desconectado.")
 
     def _on_lost(self):
         self._log("[SISTEMA] Conexión perdida", "#f38ba8")
         self._disconnect()
 
-    # ── Modo ───────────────────────────────────────────────────
     def _is_master_mode(self):
         return self.mode_combo.currentIndex() == 0
 
     def _on_mode_changed(self, idx):
-        mode = "MAESTRO (texto)" if idx == 0 else "SLAVE (binario)"
-        self._log(f"[MODO] Cambiado a {mode}", "#f9e2af")
-        if idx == 0:
-            self.raw_input.setPlaceholderText('Ej: "ping"  "pwm 1 200"  "servo 45"  "neo 1"  "reset"')
-        else:
-            self.raw_input.setPlaceholderText('Bytes hex separados por espacio: F0 00 00  ó  01 02 80')
+        self._log(f"[MODO] {'MAESTRO (texto)' if idx==0 else 'SLAVE (binario)'}", "#f9e2af")
+        self.raw_input.setPlaceholderText(
+            '"ping"  "pwm 1 200"  "servo 45"  "neo 1"  "reset"' if idx == 0
+            else 'Bytes hex: F0 00 00  ó  01 02 80'
+        )
 
     def _bytes_to_text(self, cmd, pin_id, value):
-        """Convierte triplete de bytes al comando texto del maestro."""
         if cmd == CMD_PING:    return "ping"
         if cmd == CMD_RESET:   return "reset"
         if cmd == CMD_PWM:     return f"pwm {pin_id} {value}"
         if cmd == CMD_SERVO:   return f"servo {value}"
         if cmd == CMD_DIGITAL:
-            decimal_pin = (pin_id >> 4) * 10 + (pin_id & 0x0F)
-            return f"digital {decimal_pin} {value}"
+            return f"digital {(pin_id >> 4) * 10 + (pin_id & 0x0F)} {value}"
         if cmd == CMD_NEOPIXEL:
             return f"neo {'ff' if value == 0xFF else value}"
         return f"raw {cmd} {pin_id} {value}"
 
-    # ── Envío de bytes ─────────────────────────────────────────
     def _send_bytes(self, cmd, pin_id, value, label):
         if not self.ser or not self.ser.is_open:
             self._log("[ERROR] No conectado", "#f38ba8")
@@ -482,8 +451,7 @@ class ESP32Tester(QMainWindow):
                 self.ser.write((text_cmd + "\n").encode())
                 self._log(f'→ TEXT: "{text_cmd}"  [{cmd:#04x} {pin_id:#04x} {value:#04x}]', "#89dceb")
             else:
-                buf = bytes([cmd, pin_id, value])
-                self.ser.write(buf)
+                self.ser.write(bytes([cmd, pin_id, value]))
                 self._log(f"→ BIN: {label}  [{cmd:#04x} {pin_id:#04x} {value:#04x}]", "#89dceb")
         except Exception as e:
             self._log(f"[ERROR] {e}", "#f38ba8")
@@ -500,42 +468,28 @@ class ESP32Tester(QMainWindow):
                 self.ser.write((text + "\n").encode())
                 self._log(f'→ TEXT: "{text}"', "#cba6f7")
             else:
-                # Interpretar como bytes hex: "F0 00 00"
-                parts = text.split()
-                buf = bytes(int(p, 16) for p in parts)
+                buf = bytes(int(p, 16) for p in text.split())
                 self.ser.write(buf)
                 self._log(f'→ BIN: {" ".join(f"0x{b:02X}" for b in buf)}', "#cba6f7")
             self.raw_input.clear()
         except Exception as e:
             self._log(f"[ERROR] {e}", "#f38ba8")
 
-    # ── Acciones de botones ────────────────────────────────────
-    def _send_ping(self):
-        self._send_bytes(CMD_PING, 0x00, 0x00, "PING")
-
-    def _send_reset(self):
-        self._send_bytes(CMD_RESET, 0x00, 0x00, "RESET")
-
+    def _send_ping(self):    self._send_bytes(CMD_PING,    0x00, 0x00, "PING")
+    def _send_reset(self):   self._send_bytes(CMD_RESET,   0x00, 0x00, "RESET")
     def _send_status(self):
         self._log("[INFO] Verificando conexión — envía un PING", "#f9e2af")
         self._send_ping()
-
     def _send_pwm(self, motor):
-        val = self._pwm_sliders[motor].value()
-        self._send_bytes(CMD_PWM, motor, val, f"PWM M{motor} = {val}")
-
+        self._send_bytes(CMD_PWM, motor, self._pwm_sliders[motor].value(), f"PWM M{motor}")
     def _send_digital(self, pin_id, value):
-        self._send_bytes(CMD_DIGITAL, pin_id, value, f"DIGITAL 0x{pin_id:02X} = {value}")
-
+        self._send_bytes(CMD_DIGITAL, pin_id, value, f"DIGITAL 0x{pin_id:02X}={value}")
     def _send_servo(self):
-        angle = self.servo_slider.value()
-        self._send_bytes(CMD_SERVO, 0x00, angle, f"SERVO = {angle}°")
-
+        self._send_bytes(CMD_SERVO, 0x00, self.servo_slider.value(), "SERVO")
     def _send_neopixel(self, color):
         names = {0x00: "OFF", 0x01: "ROJO", 0x02: "VERDE", 0x03: "AZUL", 0xFF: "BLANCO"}
-        self._send_bytes(CMD_NEOPIXEL, 0x00, color, f"NEOPIXEL = {names.get(color, hex(color))}")
+        self._send_bytes(CMD_NEOPIXEL, 0x00, color, f"NEOPIXEL={names.get(color, hex(color))}")
 
-    # ── Terminal ───────────────────────────────────────────────
     def _log(self, msg, color="#cdd6f4"):
         ts = datetime.now().strftime("%H:%M:%S.%f")[:-3]
         self.terminal.append(
@@ -547,13 +501,92 @@ class ESP32Tester(QMainWindow):
     def _clear_terminal(self):
         self.terminal.clear()
 
-    # ── Cierre ─────────────────────────────────────────────────
-    def closeEvent(self, event):
+    def cleanup(self):
         self._disconnect()
+
+
+# ══════════════════════════════════════════════════════════════
+#  VENTANA PRINCIPAL
+# ══════════════════════════════════════════════════════════════
+class ESP32Tester(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Tesla Lab — ESP32 Tester")
+        self.setMinimumSize(1050, 720)
+        self.logo_path = self._find_logo()
+        self._build_ui()
+        self.setStyleSheet(STYLE)
+
+    def _find_logo(self):
+        base = os.path.dirname(os.path.abspath(__file__))
+        for candidate in [
+            os.path.join(base, "imgs", "LOGO TESLA-13.png"),
+            os.path.join(base, "LOGO_TESLA-13.png"),
+        ]:
+            if os.path.exists(candidate):
+                return candidate
+        return None
+
+    def _build_ui(self):
+        self.status_bar = QStatusBar()
+        self.setStatusBar(self.status_bar)
+        self.status_bar.showMessage("Listo.")
+
+        central = QWidget()
+        self.setCentralWidget(central)
+        root = QVBoxLayout(central)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+        root.addWidget(self._build_banner())
+        root.addWidget(self._build_tabs(), 1)
+
+    def _build_banner(self):
+        banner = QWidget()
+        banner.setStyleSheet("background:#181825; border-bottom:1px solid #45475a;")
+        banner.setFixedHeight(52)
+        lay = QHBoxLayout(banner)
+        lay.setContentsMargins(14, 6, 14, 6)
+        if self.logo_path:
+            lbl = QLabel()
+            lbl.setPixmap(QPixmap(self.logo_path).scaledToHeight(36, Qt.SmoothTransformation))
+        else:
+            lbl = QLabel("TESLA LAB")
+            lbl.setFont(QFont("Segoe UI", 16, QFont.Bold))
+            lbl.setStyleSheet("color:#fab387;")
+        lay.addWidget(lbl)
+        lay.addStretch()
+        sub = QLabel("Tesla Lab - Test Station")
+        sub.setStyleSheet("color:#585b70; font-size:11px;")
+        lay.addWidget(sub)
+        return banner
+
+    def _build_tabs(self):
+        tabs = QTabWidget()
+        tabs.setDocumentMode(True)
+        self.tab_tester     = TabTester()
+        self.tab_validacion = TabValidacion(
+            logo_path=self.logo_path,
+            sheet_id=SHEET_ID,
+            sheet_map=SHEET_MAP,
+            qr_pattern=QR_PATTERN,
+            col_config=(COL_ESTADO, COL_ID, COL_QR, COL_TIMESTAMP, COL_NOTAS),
+            header_row=HEADER_ROW,
+        )
+        tabs.addTab(self.tab_tester,     "Tester Serial")
+        tabs.addTab(self.tab_validacion, "Validación QR")
+        self.tab_tester.status_msg.connect(self.status_bar.showMessage)
+        self.tab_validacion.status_msg.connect(self.status_bar.showMessage)
+        return tabs
+
+    def closeEvent(self, event):
+        self.tab_tester.cleanup()
+        self.tab_validacion.cleanup()
         event.accept()
 
 
-# ─── Main ─────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════
+#  MAIN
+# ══════════════════════════════════════════════════════════════
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
