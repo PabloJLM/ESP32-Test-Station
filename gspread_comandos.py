@@ -1,4 +1,5 @@
 import gspread
+from datetime import datetime
 # Conectar a la hoja de cálculo usando OAuth
 gc = gspread.oauth(
     credentials_filename='credentials.json',
@@ -31,7 +32,7 @@ def get_value(ws, celda): #usar notacion A1
 #3. set valores menos en las predeterminadas
 def set_value(ws, celda, contenido):
     ws = worksheet_names[ws]
-    if celda == 'A1' or celda == 'B1' or celda == 'C1' or celda == 'D1':
+    if celda == 'A1' or celda == 'B1' or celda == 'C1' or celda == 'D1' or celda == 'E1':
         print("No se puede modificar esta celda!")
         
     else:
@@ -43,5 +44,44 @@ def borrar_celda(ws,celda):
     ws.update_acell(celda,'')
     print("Se borro la celda: " + celda)    
 
-#set_value('Drones','A4','AAAAA')
-#borrar_celda('Drones','A4')
+def set_timestamp(ws,celda):
+    timestamp = datetime.now().strftime("%d/%m/%Y %H:%M")
+    ws=worksheet_names[ws]
+    ws.update_acell(celda,timestamp)
+    print(timestamp)  
+
+def set_estado(ws,celda,color):
+    ws=worksheet_names[ws]
+    if celda == 'A1' or celda == 'B1' or celda == 'C1' or celda == 'D1' or celda == 'E1':
+        print("No se puede modificar esta celda!")
+        
+    else:
+        if color == True:
+            ws.format(celda,{
+            "backgroundColor": {
+            "red": 0.0,
+            "green": 1.0,
+            "blue": 0.0
+                }
+            })
+        else:
+            ws.format(celda,{
+            "backgroundColor": {
+            "red": 1.0,
+            "green": 0.0,
+            "blue": 0.0
+                }
+            })
+
+def clean_estado(ws,celda):
+    ws=worksheet_names[ws]
+    ws.format(celda,{
+            "backgroundColor": {
+            "red": 1.0,
+            "green": 1.0,
+            "blue": 1.0
+                }
+            })
+
+#set_timestamp('ESP32','A7')
+#set_estado('ESP32','A7',True)
