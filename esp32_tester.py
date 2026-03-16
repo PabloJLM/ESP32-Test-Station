@@ -190,7 +190,7 @@ class TabTester(QWidget):
         self.baud_combo = QComboBox()
         self.baud_combo.addItems(["9600", "19200", "57600", "115200", "230400"])
         self.baud_combo.setCurrentText("9600")
-        self.btn_refresh = QPushButton("↻ Puertos")
+        self.btn_refresh = QPushButton("Puertos")
         self.btn_connect = QPushButton("Conectar")
         self.btn_connect.setCheckable(True)
         self.btn_connect.setFixedWidth(110)
