@@ -146,7 +146,7 @@ class QRGeneratorWindow(QMainWindow):
         grid.addWidget(QLabel("Columnas:"), 2, 2)
         self.cols_spin = QSpinBox()
         self.cols_spin.setRange(1, 10)
-        self.cols_spin.setValue(6)
+        self.cols_spin.setValue(8) #usar 6 u 8 
         grid.addWidget(self.cols_spin, 2, 3)
 
         # Formato probar con 200, 250 y 300 px?
