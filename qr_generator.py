@@ -78,6 +78,7 @@ class QRPreviewWidget(QLabel):
 class QRGeneratorWindow(QMainWindow):
     def __init__(self):
         super().__init__()
+        #self.setWindowIcon(QtGui.QIcon('LOGO TESLA-10.png'))
         self.setWindowTitle("Tesla Lab — Generador de QR")
         self.setMinimumSize(700, 600)
         self.resize(800, 650)
@@ -304,10 +305,13 @@ def main():
 
     logo_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                              "..", "TEST_STATION", "imgs", "LOGO TESLA-13.png")
+    
+    logo_path2 = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             "..", "TEST_STATION", "imgs", "LOGO TESLA-09.png")
     if not os.path.exists(logo_path):
         logo_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "imgs", "LOGO TESLA-13.png")
-    if os.path.exists(logo_path):
-        app.setWindowIcon(QIcon(logo_path))
+    if os.path.exists(logo_path2):
+        app.setWindowIcon(QIcon(logo_path2))
 
     window = QRGeneratorWindow()
     window.show()
