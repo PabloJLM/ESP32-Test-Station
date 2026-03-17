@@ -1,8 +1,3 @@
-# validacion.py — Pestaña "Validación QR" + hilos de cámara/Sheets + generador PDF
-#
-# Recibe la configuración desde esp32_tester.py (sheet_id, sheet_map, etc.)
-# para no duplicar constantes entre archivos.
-
 import os
 import shutil
 from datetime import datetime
@@ -16,9 +11,7 @@ from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QFont, QPixmap, QImage
 
 
-# ══════════════════════════════════════════════════════════════
-#  HILO CÁMARA / QR
-# ══════════════════════════════════════════════════════════════
+# Parte de camara y QR
 class CameraThread(QThread):
     frame_ready = pyqtSignal(QImage)
     qr_detected = pyqtSignal(str)
@@ -68,9 +61,7 @@ class CameraThread(QThread):
         self.wait()
 
 
-# ══════════════════════════════════════════════════════════════
-#  HILO GOOGLE SHEETS
-# ══════════════════════════════════════════════════════════════
+# Google sheets 
 class SheetsWorker(QThread):
     done = pyqtSignal(bool, str)
 
@@ -124,9 +115,7 @@ class SheetsWorker(QThread):
             self.done.emit(False, str(e))
 
 
-# ══════════════════════════════════════════════════════════════
-#  GENERADOR DE REPORTE PDF
-# ══════════════════════════════════════════════════════════════
+# genera los reportes en pdf
 def generar_reporte_pdf(data: dict, qr_pattern, logo_path: str = None) -> str:
     from reportlab.lib.pagesizes import letter
     from reportlab.lib import colors
@@ -242,9 +231,7 @@ def generar_reporte_pdf(data: dict, qr_pattern, logo_path: str = None) -> str:
     return fpath
 
 
-# ══════════════════════════════════════════════════════════════
-#  PESTAÑA VALIDACIÓN QR
-# ══════════════════════════════════════════════════════════════
+# Validacion 
 class TabValidacion(QWidget):
     status_msg = pyqtSignal(str)
 
@@ -313,7 +300,7 @@ class TabValidacion(QWidget):
         col = QVBoxLayout()
         col.setSpacing(8)
 
-        # Sesión
+        # Se debe indicar quien fue el encargado! 
         box_op = QGroupBox("Sesión")
         lay_op = QHBoxLayout(box_op)
         lay_op.addWidget(QLabel("Encargado:"))
@@ -420,7 +407,7 @@ class TabValidacion(QWidget):
             self.cam_thread.stop()
             self.cam_thread = None
         self.cam_label.setText("[ Sin señal de cámara ]")
-        self.btn_cam.setText("▶  Iniciar cámara")
+        self.btn_cam.setText("Iniciar cámara")
         self._log("Cámara detenida.")
 
     def _update_frame(self, qimg):
