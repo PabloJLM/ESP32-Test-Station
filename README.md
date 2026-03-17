@@ -1,4 +1,21 @@
-# Tesla Test Station
+<h1 align="center">
+Tesla Test Station
+</h1>
+
+<p align="center">
+  Herramientas para generación de códigos QR y pruebas con ESP32
+</p>
+
+<p align="center">
+  <a href="https://www.python.org">
+    <img src="https://img.shields.io/badge/Python-3.10-3776AB.svg?style=flat&logo=python&logoColor=white">
+  </a>
+  <a href="https://www.arduino.cc/">
+    <img src="https://img.shields.io/badge/Arduino-2.3.7-blue?style=flat&logo=Arduino">
+  </a>
+  <img src="https://img.shields.io/badge/ESP32-Espressif-red?style=flat&logo=espressif&logoColor=white">
+  <img src="https://img.shields.io/badge/Google%20Sheets-34A853?style=flat&logo=google-sheets&logoColor=white">
+</p>
 
 Repositorio que contiene dos aplicaciones:
 - Generador de códigos QR
