@@ -1,8 +1,4 @@
-// ============================================================
-//  MASTER - Estación de Test con comandos por Serial USB
-//  Recibe comandos del PC y los envía al SLAVE por UART2
-// ============================================================
-
+//modo master 
 // ── Configuración de pines ──────────────────────────────────
 #define UART_TX_PIN    18  // Conectar al RX del slave (GPIO3)
 #define UART_RX_PIN    19  // Conectar al TX del slave (GPIO1)

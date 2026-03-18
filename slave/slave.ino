@@ -1,11 +1,4 @@
-// ============================================================
-//  SLAVE - ESP32 Custom Board (la que se testea)
-//  Serial (GPIO1/GPIO3) recibe comandos de la estación
-//  Librerías requeridas (instalar en Arduino IDE):
-//    - ESP32Servo  (por Kevin Harrington)
-//    - Adafruit NeoPixel
-// ============================================================
-
+//modo slave 
 #include <ESP32Servo.h>
 #include <Adafruit_NeoPixel.h>
 
@@ -72,13 +65,23 @@ void setup() {
 
   // ─── NUEVA API LEDC PARA ESP32 CORE 3.x ───────────────────
   // PWM Motores - 5 kHz, 10 bits (0-1023)
-  ledcAttach(PIN_M1_PWM, 5000, 10);  // channel asignado automáticamente
-  ledcAttach(PIN_M2_PWM, 5000, 10);
-  ledcAttach(PIN_M3_PWM, 5000, 10);
-  ledcAttach(PIN_M4_PWM, 5000, 10);
+// ─── NUEVA API LEDC PARA ESP32 CORE 3.x ───────────────────
+// Configuración de PWM usando la API actual
+  ledcSetup(0, 5000, 10);  // channel 0, 5 kHz, 10 bits
+  ledcSetup(1, 5000, 10);  // channel 1, 5 kHz, 10 bits
+  ledcSetup(2, 5000, 10);  // channel 2, 5 kHz, 10 bits
+  ledcSetup(3, 5000, 10);  // channel 3, 5 kHz, 10 bits
+  ledcSetup(4, 50, 16);    // channel 4, 50 Hz, 16 bits para servo
+
+  // Asignar pines a los canales
+  ledcAttachPin(PIN_M1_PWM, 0);
+  ledcAttachPin(PIN_M2_PWM, 1);
+  ledcAttachPin(PIN_M3_PWM, 2);
+  ledcAttachPin(PIN_M4_PWM, 3);
+  ledcAttachPin(PIN_SERVO1, 4);
   
   // Servo - 50 Hz, 16 bits
-  ledcAttach(PIN_SERVO1, 50, 16);
+  //ledcAttach(PIN_SERVO1, 50, 16);
 
   // NeoPixel
   pixel.begin();
