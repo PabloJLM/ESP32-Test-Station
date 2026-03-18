@@ -1,3 +1,15 @@
+#!/usr/bin/env python3
+"""
+Tesla Lab — ESP32 Tester
+========================
+Requiere: pip install pyserial PyQt5 opencv-python gspread reportlab pillow
+
+Archivos:
+    esp32_tester.py   ← este archivo (main + config + tester serial)
+    validacion.py     ← pestaña de validación QR + Sheets + PDF
+    qr_generator.py   ← app separada para generar stickers QR
+"""
+
 import sys
 import os
 import re
@@ -16,6 +28,7 @@ from PyQt5.QtGui import QFont, QPixmap, QTextCursor
 from validacion    import TabValidacion
 from tab_buscador  import TabBuscador
 from tab_dashboard import TabDashboard
+from tab_admin     import TabAdmin
 
 
 # ══════════════════════════════════════════════════════════════
@@ -545,6 +558,9 @@ class ESP32Tester(QMainWindow):
             lbl.setStyleSheet("color:#fab387;")
         lay.addWidget(lbl)
         lay.addStretch()
+        sub = QLabel("Tesla Lab - Test Station")
+        sub.setStyleSheet("color:#585b70; font-size:11px;")
+        lay.addWidget(sub)
         return banner
 
     def _build_tabs(self):
@@ -571,15 +587,23 @@ class ESP32Tester(QMainWindow):
             header_row=HEADER_ROW,
         )
 
+        self.tab_admin = TabAdmin(
+            sheet_id=SHEET_ID,
+            sheet_map=SHEET_MAP,
+            header_row=HEADER_ROW,
+        )
+
         tabs.addTab(self.tab_tester,     "Tester Serial")
         tabs.addTab(self.tab_validacion, "Validacion QR")
         tabs.addTab(self.tab_buscador,   "Buscador")
         tabs.addTab(self.tab_dashboard,  "Dashboard")
+        tabs.addTab(self.tab_admin,      "Admin")
 
         self.tab_tester.status_msg.connect(self.status_bar.showMessage)
         self.tab_validacion.status_msg.connect(self.status_bar.showMessage)
         self.tab_buscador.status_msg.connect(self.status_bar.showMessage)
         self.tab_dashboard.status_msg.connect(self.status_bar.showMessage)
+        self.tab_admin.status_msg.connect(self.status_bar.showMessage)
         return tabs
 
     def closeEvent(self, event):
@@ -587,6 +611,7 @@ class ESP32Tester(QMainWindow):
         self.tab_validacion.cleanup()
         self.tab_buscador.cleanup()
         self.tab_dashboard.cleanup()
+        self.tab_admin.cleanup()
         event.accept()
 
 
