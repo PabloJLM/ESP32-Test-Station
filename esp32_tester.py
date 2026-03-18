@@ -1,15 +1,3 @@
-#!/usr/bin/env python3
-"""
-Tesla Lab — ESP32 Tester
-========================
-Requiere: pip install pyserial PyQt5 opencv-python gspread reportlab pillow
-
-Archivos:
-    esp32_tester.py   ← este archivo (main + config + tester serial)
-    validacion.py     ← pestaña de validación QR + Sheets + PDF
-    qr_generator.py   ← app separada para generar stickers QR
-"""
-
 import sys
 import os
 import re
@@ -25,7 +13,9 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QFont, QPixmap, QTextCursor
 
-from validacion import TabValidacion
+from validacion    import TabValidacion
+from tab_buscador  import TabBuscador
+from tab_dashboard import TabDashboard
 
 
 # ══════════════════════════════════════════════════════════════
@@ -555,14 +545,12 @@ class ESP32Tester(QMainWindow):
             lbl.setStyleSheet("color:#fab387;")
         lay.addWidget(lbl)
         lay.addStretch()
-        sub = QLabel("Tesla Lab - Test Station")
-        sub.setStyleSheet("color:#585b70; font-size:11px;")
-        lay.addWidget(sub)
         return banner
 
     def _build_tabs(self):
         tabs = QTabWidget()
         tabs.setDocumentMode(True)
+
         self.tab_tester     = TabTester()
         self.tab_validacion = TabValidacion(
             logo_path=self.logo_path,
@@ -572,15 +560,33 @@ class ESP32Tester(QMainWindow):
             col_config=(COL_ESTADO, COL_ID, COL_QR, COL_TIMESTAMP, COL_NOTAS),
             header_row=HEADER_ROW,
         )
+        self.tab_buscador = TabBuscador(
+            sheet_id=SHEET_ID,
+            sheet_map=SHEET_MAP,
+            header_row=HEADER_ROW,
+        )
+        self.tab_dashboard = TabDashboard(
+            sheet_id=SHEET_ID,
+            sheet_map=SHEET_MAP,
+            header_row=HEADER_ROW,
+        )
+
         tabs.addTab(self.tab_tester,     "Tester Serial")
-        tabs.addTab(self.tab_validacion, "Validación QR")
+        tabs.addTab(self.tab_validacion, "Validacion QR")
+        tabs.addTab(self.tab_buscador,   "Buscador")
+        tabs.addTab(self.tab_dashboard,  "Dashboard")
+
         self.tab_tester.status_msg.connect(self.status_bar.showMessage)
         self.tab_validacion.status_msg.connect(self.status_bar.showMessage)
+        self.tab_buscador.status_msg.connect(self.status_bar.showMessage)
+        self.tab_dashboard.status_msg.connect(self.status_bar.showMessage)
         return tabs
 
     def closeEvent(self, event):
         self.tab_tester.cleanup()
         self.tab_validacion.cleanup()
+        self.tab_buscador.cleanup()
+        self.tab_dashboard.cleanup()
         event.accept()
 
 
