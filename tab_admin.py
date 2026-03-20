@@ -10,10 +10,6 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
 from PyQt5.QtGui import QFont
 
-
-# ══════════════════════════════════════════════════════════════
-#  RUTAS — funciona tanto en .py como en .exe (PyInstaller)
-# ══════════════════════════════════════════════════════════════
 def _resource_path(relative: str) -> str:
     """
     Resuelve rutas de recursos correctamente en desarrollo y
@@ -64,23 +60,14 @@ CAT_COLORS = {
     "IOT":         C_GREEN,
 }
 
-# ══════════════════════════════════════════════════════════════
-#  TEXTOS DE LAS FOTOS  ← cambiar aquí
-# ══════════════════════════════════════════════════════════════
-FOTO1_TEXTO = "Hola"
-FOTO2_TEXTO = "Adios"
+FOTO1_TEXTO = "No deberias estar aqui"
+FOTO2_TEXTO = "Mi mujer:"
 
-# ══════════════════════════════════════════════════════════════
-#  RUTAS DE RECURSOS
-# ══════════════════════════════════════════════════════════════
 VIDEO_PATH = _resource_path(os.path.join("imgs", "reze.mp4"))
 FOTO1_PATH = _resource_path(os.path.join("imgs", "easter_egg3.jpeg"))
 FOTO2_PATH = _resource_path(os.path.join("imgs", "easter_egg2.jpeg"))
 
 
-# ══════════════════════════════════════════════════════════════
-#  WORKER BORRADO SHEETS
-# ══════════════════════════════════════════════════════════════
 class ClearWorker(QThread):
     progress = pyqtSignal(str, bool)
     finished = pyqtSignal()

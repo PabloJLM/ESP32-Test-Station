@@ -11,7 +11,9 @@ from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QFont, QPixmap, QImage
 
 
-# Parte de camara y QR
+# ══════════════════════════════════════════════════════════════
+#  HILO CÁMARA
+# ══════════════════════════════════════════════════════════════
 class CameraThread(QThread):
     frame_ready = pyqtSignal(QImage)
     qr_detected = pyqtSignal(str)
@@ -51,7 +53,9 @@ class CameraThread(QThread):
                             self.qr_detected.emit(s)
             rgb  = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             h, w, ch = rgb.shape
-            self.frame_ready.emit(QImage(rgb.data, w, h, w * ch, QImage.Format_RGB888).copy())
+            self.frame_ready.emit(
+                QImage(rgb.data, w, h, w * ch, QImage.Format_RGB888).copy()
+            )
             self.msleep(30)
         cap.release()
 
@@ -61,11 +65,14 @@ class CameraThread(QThread):
         self.wait()
 
 
-# Google sheets 
+# ══════════════════════════════════════════════════════════════
+#  HILO GOOGLE SHEETS
+# ══════════════════════════════════════════════════════════════
 class SheetsWorker(QThread):
     done = pyqtSignal(bool, str)
 
-    def __init__(self, sheet_id, sheet_name, qr_code, estado, col_config, header_row, qr_pattern, notas=""):
+    def __init__(self, sheet_id, sheet_name, qr_code, estado,
+                 col_config, header_row, qr_pattern, notas=""):
         super().__init__()
         self.sheet_id   = sheet_id
         self.sheet_name = sheet_name
@@ -115,7 +122,9 @@ class SheetsWorker(QThread):
             self.done.emit(False, str(e))
 
 
-# genera los reportes en pdf
+# ══════════════════════════════════════════════════════════════
+#  GENERADOR DE REPORTE PDF
+# ══════════════════════════════════════════════════════════════
 def generar_reporte_pdf(data: dict, qr_pattern, logo_path: str = None) -> str:
     from reportlab.lib.pagesizes import letter
     from reportlab.lib import colors
@@ -134,10 +143,12 @@ def generar_reporte_pdf(data: dict, qr_pattern, logo_path: str = None) -> str:
     desktop = os.path.join(os.path.expanduser("~"), "Desktop")
     fpath   = os.path.join(desktop if os.path.isdir(desktop) else os.getcwd(), fname)
 
-    doc = SimpleDocTemplate(fpath, pagesize=letter,
-                            leftMargin=2*cm, rightMargin=2*cm,
-                            topMargin=1.5*cm, bottomMargin=2*cm,
-                            title=f"Reporte Tesla Lab — {data['qr_code']}")
+    doc = SimpleDocTemplate(
+        fpath, pagesize=letter,
+        leftMargin=2*cm, rightMargin=2*cm,
+        topMargin=1.5*cm, bottomMargin=2*cm,
+        title=f"Reporte Tesla Lab — {data['qr_code']}"
+    )
 
     title_s = sty('TT', fontSize=20, fontName='Helvetica-Bold',
                   textColor=colors.HexColor('#1e3a5f'), spaceAfter=2)
@@ -153,18 +164,21 @@ def generar_reporte_pdf(data: dict, qr_pattern, logo_path: str = None) -> str:
     story = []
 
     # Encabezado
-    logo_cell = (RLImage(logo_path, width=5*cm, height=1.6*cm, kind='proportional')
-                 if logo_path and os.path.exists(logo_path)
-                 else Paragraph("<b>TESLA LAB</b>", title_s))
-    hdr = Table([[logo_cell, [
-        Paragraph("REPORTE DE VALIDACIÓN", title_s),
-    ]]], colWidths=[5.5*cm, None])
+    logo_cell = (
+        RLImage(logo_path, width=5*cm, height=1.6*cm, kind='proportional')
+        if logo_path and os.path.exists(logo_path)
+        else Paragraph("<b>TESLA LAB</b>", title_s)
+    )
+    hdr = Table([[logo_cell, [Paragraph("REPORTE DE VALIDACIÓN", title_s)]]], colWidths=[5.5*cm, None])
     hdr.setStyle(TableStyle([
-        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('ALIGN', (1,0), (1,0), 'RIGHT'),
-        ('LEFTPADDING', (0,0), (-1,-1), 0),   ('RIGHTPADDING', (0,0), (-1,-1), 0),
+        ('VALIGN',        (0,0), (-1,-1), 'MIDDLE'),
+        ('ALIGN',         (1,0), (1,0),   'RIGHT'),
+        ('LEFTPADDING',   (0,0), (-1,-1), 0),
+        ('RIGHTPADDING',  (0,0), (-1,-1), 0),
     ]))
     story.append(hdr)
-    story.append(HRFlowable(width="100%", thickness=2, color=colors.HexColor('#1e3a5f'), spaceAfter=10))
+    story.append(HRFlowable(width="100%", thickness=2,
+                            color=colors.HexColor('#1e3a5f'), spaceAfter=10))
 
     # Badge estado
     is_ok   = data['estado'].upper() == "OK"
@@ -187,14 +201,14 @@ def generar_reporte_pdf(data: dict, qr_pattern, logo_path: str = None) -> str:
     story.append(Paragraph("Información del Dispositivo", sec_s))
     m = qr_pattern.match(data['qr_code'])
     dev_t = Table([
-        [Paragraph("Campo", lbl_s), Paragraph("Valor", lbl_s)],
+        [Paragraph("Campo", lbl_s),  Paragraph("Valor", lbl_s)],
         ["Código QR",    data['qr_code']],
         ["Tipo",         m.group(1).upper() if m else "—"],
         ["ID / Número",  m.group(2)         if m else "—"],
         ["Hoja (Sheet)", data.get('sheet',    '—')],
         ["Estado",       data['estado']],
         ["Timestamp",    data['timestamp']],
-        ["Encargado",     data.get('encargado', 'No especificado')],
+        ["Encargado",    data.get('encargado', 'No especificado')],
     ], colWidths=[5*cm, None])
     dev_t.setStyle(TableStyle([
         ('BACKGROUND',     (0,0), (-1,0),  colors.HexColor('#1e3a5f')),
@@ -216,12 +230,14 @@ def generar_reporte_pdf(data: dict, qr_pattern, logo_path: str = None) -> str:
     story.append(Paragraph("Notas / Observaciones", sec_s))
     notas = data.get('notas', '').strip()
     story.append(Paragraph(
-        notas if notas else '<font color="#999999"><i>Sin notas adicionales.</i></font>', body_s
+        notas if notas else '<font color="#999999"><i>Sin notas adicionales.</i></font>',
+        body_s
     ))
 
     # Pie
     story.append(Spacer(1, 20))
-    story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor('#cccccc'), spaceAfter=5))
+    story.append(HRFlowable(width="100%", thickness=0.5,
+                            color=colors.HexColor('#cccccc'), spaceAfter=5))
     story.append(Paragraph(
         f'<font size="8" color="#888888">Tesla Lab · Universidad Galileo · '
         f'Reporte generado automáticamente · {data["timestamp"]}</font>', body_s
@@ -231,7 +247,9 @@ def generar_reporte_pdf(data: dict, qr_pattern, logo_path: str = None) -> str:
     return fpath
 
 
-# Validacion 
+# ══════════════════════════════════════════════════════════════
+#  PESTAÑA VALIDACIÓN
+# ══════════════════════════════════════════════════════════════
 class TabValidacion(QWidget):
     status_msg = pyqtSignal(str)
 
@@ -246,9 +264,19 @@ class TabValidacion(QWidget):
         self.header_row  = header_row
         self.cam_thread  = None
         self.last_qr     = None
-        self.encargado    = "Encargado"
+        self.encargado   = ""
         self._sheets_worker = None
         self._build_ui()
+
+    # ── API pública ──────────────────────────────────────────────
+    def set_encargado(self, nombre: str):
+        """
+        Recibe el username del login general y lo aplica
+        al campo encargado. El campo queda editable por si
+        se quiere cambiar manualmente.
+        """
+        self.encargado = nombre
+        self.op_input.setText(nombre)
 
     # ── UI ──────────────────────────────────────────────────────
     def _build_ui(self):
@@ -278,7 +306,8 @@ class TabValidacion(QWidget):
         self.cam_label.setFixedSize(560, 420)
         self.cam_label.setAlignment(Qt.AlignCenter)
         self.cam_label.setStyleSheet(
-            "background:#0d0d1a; border:1px solid #45475a; border-radius:8px; color:#585b70;"
+            "background:#0d0d1a; border:1px solid #45475a; "
+            "border-radius:8px; color:#585b70;"
         )
         lay.addWidget(self.cam_label)
 
@@ -300,12 +329,18 @@ class TabValidacion(QWidget):
         col = QVBoxLayout()
         col.setSpacing(8)
 
-        # Se debe indicar quien fue el encargado! 
+        # Sesión / Encargado
         box_op = QGroupBox("Sesión")
         lay_op = QHBoxLayout(box_op)
         lay_op.addWidget(QLabel("Encargado:"))
         self.op_input = QLineEdit(self.encargado)
         self.op_input.setPlaceholderText("Nombre del encargado")
+        self.op_input.setReadOnly(True)   # solo lectura — se hereda del login
+        self.op_input.setStyleSheet(
+            "QLineEdit { background: #181825; color: #a6e3a1; "
+            "border: 1px solid #45475a; border-radius: 4px; padding: 4px 8px; "
+            "font-weight: 600; }"
+        )
         self.op_input.textChanged.connect(lambda t: setattr(self, 'encargado', t))
         lay_op.addWidget(self.op_input)
         col.addWidget(box_op)
@@ -434,9 +469,13 @@ class TabValidacion(QWidget):
         id_num     = m.group(2)
         sheet_name = self.sheet_map.get(tipo, tipo)
         self.last_qr = {
-            'qr_code': qr_code, 'tipo': tipo, 'id_num': id_num,
-            'sheet': sheet_name, 'timestamp': datetime.now().strftime("%d/%m/%Y %H:%M"),
-            'notas': "", 'estado': None,
+            'qr_code':   qr_code,
+            'tipo':      tipo,
+            'id_num':    id_num,
+            'sheet':     sheet_name,
+            'timestamp': datetime.now().strftime("%d/%m/%Y %H:%M"),
+            'notas':     "",
+            'estado':    None,
         }
         self.lbl_qr_code.setText(qr_code)
         self.lbl_qr_info.setText(f"Tipo: {tipo}   |   ID: {id_num}   |   Hoja: {sheet_name}")
@@ -459,7 +498,8 @@ class TabValidacion(QWidget):
         if not ok:
             return
         self.last_qr.update({
-            'estado': estado, 'notas': notas.strip(),
+            'estado':    estado,
+            'notas':     notas.strip(),
             'timestamp': datetime.now().strftime("%d/%m/%Y %H:%M"),
         })
         self._set_badge(estado)
@@ -479,10 +519,14 @@ class TabValidacion(QWidget):
         self.status_msg.emit("Enviando a Google Sheets...")
 
         self._sheets_worker = SheetsWorker(
-            sheet_id=self.sheet_id, sheet_name=self.last_qr['sheet'],
-            qr_code=self.last_qr['qr_code'], estado=estado,
-            col_config=self.col_config, header_row=self.header_row,
-            qr_pattern=self.qr_pattern, notas=self.last_qr['notas'],
+            sheet_id=self.sheet_id,
+            sheet_name=self.last_qr['sheet'],
+            qr_code=self.last_qr['qr_code'],
+            estado=estado,
+            col_config=self.col_config,
+            header_row=self.header_row,
+            qr_pattern=self.qr_pattern,
+            notas=self.last_qr['notas'],
         )
         self._sheets_worker.done.connect(self._on_sheets_done)
         self._sheets_worker.start()
@@ -500,14 +544,15 @@ class TabValidacion(QWidget):
         self._log(f"{'Sheets OK' if success else 'Sheets ERROR'} → {msg}", color)
         self.status_msg.emit(f"{'Registrado' if success else 'Error'}: {msg}")
 
-    # ── Reporte ─────────────────────────────────────────────────
+    # ── Reporte PDF ─────────────────────────────────────────────
     def _generar_reporte(self):
         if not self.last_qr or self.last_qr.get('estado') is None:
             QMessageBox.warning(self, "Sin datos", "Primero valida un dispositivo.")
             return
         save_path, _ = QFileDialog.getSaveFileName(
             self, "Guardar reporte PDF",
-            f"reporte_{self.last_qr['qr_code'].replace('/', '-')}.pdf", "PDF (*.pdf)"
+            f"reporte_{self.last_qr['qr_code'].replace('/', '-')}.pdf",
+            "PDF (*.pdf)"
         )
         if not save_path:
             return
@@ -527,9 +572,9 @@ class TabValidacion(QWidget):
     # ── Helpers ─────────────────────────────────────────────────
     def _set_badge(self, estado: str):
         cfg = {
-            "OK":      ("✔  OK",        "background:#14532d; color:#86efac; border-radius:8px;"),
-            "FAIL":    ("✘  FAIL",       "background:#7f1d1d; color:#fca5a5; border-radius:8px;"),
-            "PENDING": ("PENDIENTE", "background:#3b3b55; color:#cdd6f4; border-radius:8px;"),
+            "OK":      ("✔  OK",      "background:#14532d; color:#86efac; border-radius:8px;"),
+            "FAIL":    ("✘  FAIL",    "background:#7f1d1d; color:#fca5a5; border-radius:8px;"),
+            "PENDING": ("PENDIENTE",  "background:#3b3b55; color:#cdd6f4; border-radius:8px;"),
         }
         txt, style = cfg.get(estado, cfg["PENDING"])
         self.lbl_badge.setText(txt)

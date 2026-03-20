@@ -2,12 +2,15 @@
 """
 Tesla Lab — ESP32 Tester
 ========================
-Requiere: pip install pyserial PyQt5 opencv-python gspread reportlab pillow
+Requiere: pip install pyserial PyQt5 opencv-python gspread reportlab pillow python-vlc
 
 Archivos:
     esp32_tester.py   ← este archivo (main + config + tester serial)
+    login_manager.py  ← login general + auto-bloqueo
     validacion.py     ← pestaña de validación QR + Sheets + PDF
-    qr_generator.py   ← app separada para generar stickers QR
+    tab_buscador.py   ← pestaña buscador
+    tab_dashboard.py  ← pestaña dashboard
+    tab_admin.py      ← pestaña admin
 """
 
 import sys
@@ -20,22 +23,22 @@ from datetime import datetime
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QGridLayout, QGroupBox, QPushButton, QLabel, QComboBox,
-    QLineEdit, QTextEdit, QSlider, QSplitter, QStatusBar, QTabWidget
+    QLineEdit, QTextEdit, QSlider, QSplitter, QStatusBar, QTabWidget,
+    QStackedWidget,
 )
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QEvent
 from PyQt5.QtGui import QFont, QPixmap, QTextCursor
 
-from validacion    import TabValidacion
-from tab_buscador  import TabBuscador
-from tab_dashboard import TabDashboard
-from tab_admin     import TabAdmin
+from login_manager  import LoginScreen, SessionManager
+from validacion     import TabValidacion
+from tab_buscador   import TabBuscador
+from tab_dashboard  import TabDashboard
+from tab_admin      import TabAdmin
 
 
 # ══════════════════════════════════════════════════════════════
 #  CONFIGURACIÓN GLOBAL
 # ══════════════════════════════════════════════════════════════
-
-# Google Sheets
 SHEET_ID   = '13WIYurPQvRztU1xpUru8-COzgfdPzqvTP4hEZM6pX2I'
 HEADER_ROW = 1
 COL_ESTADO    = 'A'
@@ -59,7 +62,7 @@ QR_PATTERN = re.compile(
     re.IGNORECASE
 )
 
-# Protocolo serial Maestro/Slave
+# Protocolo serial
 CMD_PWM      = 0x01
 CMD_DIGITAL  = 0x02
 CMD_SERVO    = 0x03
@@ -77,7 +80,10 @@ RESPONSES = {
     0xEE: "ERROR",
 }
 
-# Stylesheet (Catppuccin Mocha)
+# Pestañas bloqueadas sin login (índices en el QTabWidget)
+LOCKED_TABS = {0, 1, 2}   # Tester Serial, Validacion QR, Buscador
+
+# Stylesheet Catppuccin Mocha
 STYLE = """
 QMainWindow, QWidget          { background: #1e1e2e; color: #cdd6f4; font-family: 'Segoe UI', sans-serif; font-size: 12px; }
 QTabWidget::pane              { border: 1px solid #45475a; border-radius: 6px; background: #1e1e2e; }
@@ -85,6 +91,7 @@ QTabBar::tab                  { background: #313244; color: #cdd6f4; padding: 8p
                                  border-bottom: 2px solid transparent; font-size: 12px; font-weight: 600; min-width: 160px; }
 QTabBar::tab:selected         { background: #1e1e2e; color: #89b4fa; border-bottom: 2px solid #89b4fa; }
 QTabBar::tab:hover            { background: #45475a; }
+QTabBar::tab:disabled         { color: #45475a; background: #181825; }
 QGroupBox                     { border: 1px solid #45475a; border-radius: 6px; margin-top: 10px;
                                  font-weight: bold; color: #89b4fa; padding: 6px; }
 QGroupBox::title              { subcontrol-origin: margin; left: 8px; padding: 0 4px; }
@@ -199,10 +206,6 @@ class TabTester(QWidget):
         self.btn_connect.setFixedWidth(110)
         self.mode_combo = QComboBox()
         self.mode_combo.addItems(["MAESTRO (texto)", "SLAVE (binario)"])
-        self.mode_combo.setToolTip(
-            "MAESTRO: envía texto (ping, pwm 1 128…) al ESP32 Maestro via USB\n"
-            "SLAVE: envía bytes binarios [CMD, PIN, VAL] directo al ESP32 Slave"
-        )
         self.mode_combo.currentIndexChanged.connect(self._on_mode_changed)
         self.lbl_status = QLabel("Desconectado")
         self.lbl_status.setStyleSheet("color: #e74c3c; font-weight: bold;")
@@ -374,7 +377,6 @@ class TabTester(QWidget):
         lay.addLayout(row)
         return box
 
-    # ── Serial ──────────────────────────────────────────────────
     def _refresh_ports(self):
         self.port_combo.clear()
         ports = serial.tools.list_ports.comports()
@@ -428,10 +430,6 @@ class TabTester(QWidget):
 
     def _on_mode_changed(self, idx):
         self._log(f"[MODO] {'MAESTRO (texto)' if idx==0 else 'SLAVE (binario)'}", "#f9e2af")
-        self.raw_input.setPlaceholderText(
-            '"ping"  "pwm 1 200"  "servo 45"  "neo 1"  "reset"' if idx == 0
-            else 'Bytes hex: F0 00 00  ó  01 02 80'
-        )
 
     def _bytes_to_text(self, cmd, pin_id, value):
         if cmd == CMD_PING:    return "ping"
@@ -461,10 +459,7 @@ class TabTester(QWidget):
 
     def _send_raw(self):
         text = self.raw_input.text().strip()
-        if not text:
-            return
-        if not self.ser or not self.ser.is_open:
-            self._log("[ERROR] No conectado", "#f38ba8")
+        if not text or not self.ser or not self.ser.is_open:
             return
         try:
             if self._is_master_mode():
@@ -520,6 +515,13 @@ class ESP32Tester(QMainWindow):
         self._build_ui()
         self.setStyleSheet(STYLE)
 
+        # ── Sesión ──────────────────────────────────────────────
+        self._session = SessionManager(self, self.logo_path)
+        self._session.session_changed.connect(self._on_session_changed)
+
+        # Mostrar pantalla de login al arrancar
+        self._show_login()
+
     def _find_logo(self):
         base = os.path.dirname(os.path.abspath(__file__))
         for candidate in [
@@ -540,8 +542,25 @@ class ESP32Tester(QMainWindow):
         root = QVBoxLayout(central)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
-        root.addWidget(self._build_banner())
-        root.addWidget(self._build_tabs(), 1)
+
+        # Stack: 0 = login, 1 = app
+        self._main_stack = QStackedWidget()
+
+        # Pantalla de login
+        self._login_screen = LoginScreen(logo_path=self.logo_path)
+        self._login_screen.login_ok.connect(self._on_login)
+        self._main_stack.addWidget(self._login_screen)   # índice 0
+
+        # App principal
+        app_widget = QWidget()
+        app_layout = QVBoxLayout(app_widget)
+        app_layout.setContentsMargins(0, 0, 0, 0)
+        app_layout.setSpacing(0)
+        app_layout.addWidget(self._build_banner())
+        app_layout.addWidget(self._build_tabs(), 1)
+        self._main_stack.addWidget(app_widget)            # índice 1
+
+        root.addWidget(self._main_stack)
 
     def _build_banner(self):
         banner = QWidget()
@@ -549,6 +568,7 @@ class ESP32Tester(QMainWindow):
         banner.setFixedHeight(52)
         lay = QHBoxLayout(banner)
         lay.setContentsMargins(14, 6, 14, 6)
+
         if self.logo_path:
             lbl = QLabel()
             lbl.setPixmap(QPixmap(self.logo_path).scaledToHeight(36, Qt.SmoothTransformation))
@@ -558,14 +578,39 @@ class ESP32Tester(QMainWindow):
             lbl.setStyleSheet("color:#fab387;")
         lay.addWidget(lbl)
         lay.addStretch()
+
+        # Badge de usuario activo
+        self._lbl_user_badge = QLabel("")
+        self._lbl_user_badge.setStyleSheet(
+            "color:#a6e3a1; font-size:11px; font-weight:600; padding:2px 8px;"
+            "background:#14532d; border-radius:4px;"
+        )
+        self._lbl_user_badge.hide()
+        lay.addWidget(self._lbl_user_badge)
+
+        # Botón cerrar sesión
+        self._btn_logout = QPushButton("Cerrar sesión")
+        self._btn_logout.setFixedHeight(28)
+        self._btn_logout.setStyleSheet("""
+            QPushButton {
+                background: #313244; color: #f38ba8;
+                border: 1px solid #f38ba8; border-radius: 4px;
+                font-size: 11px; padding: 2px 10px;
+            }
+            QPushButton:hover { background: #3b1a1a; }
+        """)
+        self._btn_logout.clicked.connect(self._on_logout)
+        self._btn_logout.hide()
+        lay.addWidget(self._btn_logout)
+
         sub = QLabel("Tesla Lab - Test Station")
-        sub.setStyleSheet("color:#585b70; font-size:11px;")
+        sub.setStyleSheet("color:#585b70; font-size:11px; margin-left:12px;")
         lay.addWidget(sub)
         return banner
 
     def _build_tabs(self):
-        tabs = QTabWidget()
-        tabs.setDocumentMode(True)
+        self.tabs = QTabWidget()
+        self.tabs.setDocumentMode(True)
 
         self.tab_tester     = TabTester()
         self.tab_validacion = TabValidacion(
@@ -576,7 +621,7 @@ class ESP32Tester(QMainWindow):
             col_config=(COL_ESTADO, COL_ID, COL_QR, COL_TIMESTAMP, COL_NOTAS),
             header_row=HEADER_ROW,
         )
-        self.tab_buscador = TabBuscador(
+        self.tab_buscador  = TabBuscador(
             sheet_id=SHEET_ID,
             sheet_map=SHEET_MAP,
             header_row=HEADER_ROW,
@@ -586,25 +631,81 @@ class ESP32Tester(QMainWindow):
             sheet_map=SHEET_MAP,
             header_row=HEADER_ROW,
         )
-
         self.tab_admin = TabAdmin(
             sheet_id=SHEET_ID,
             sheet_map=SHEET_MAP,
             header_row=HEADER_ROW,
         )
 
-        tabs.addTab(self.tab_tester,     "Tester Serial")
-        tabs.addTab(self.tab_validacion, "Validacion QR")
-        tabs.addTab(self.tab_buscador,   "Buscador")
-        tabs.addTab(self.tab_dashboard,  "Dashboard")
-        tabs.addTab(self.tab_admin,      "Admin")
+        self.tabs.addTab(self.tab_tester,     "Tester Serial")   # 0
+        self.tabs.addTab(self.tab_validacion, "Validacion QR")   # 1
+        self.tabs.addTab(self.tab_buscador,   "Buscador")        # 2
+        self.tabs.addTab(self.tab_dashboard,  "Dashboard")       # 3
+        self.tabs.addTab(self.tab_admin,      "Admin")           # 4
 
         self.tab_tester.status_msg.connect(self.status_bar.showMessage)
         self.tab_validacion.status_msg.connect(self.status_bar.showMessage)
         self.tab_buscador.status_msg.connect(self.status_bar.showMessage)
         self.tab_dashboard.status_msg.connect(self.status_bar.showMessage)
         self.tab_admin.status_msg.connect(self.status_bar.showMessage)
-        return tabs
+
+        # Interceptar cambio de pestaña para bloquear las protegidas
+        self.tabs.currentChanged.connect(self._on_tab_changed)
+
+        return self.tabs
+
+    # ── Login / Sesión ───────────────────────────────────────────
+    def _show_login(self):
+        self._login_screen.reset()
+        self._main_stack.setCurrentIndex(0)
+        self._set_tabs_locked(True)
+        self.status_bar.showMessage("Inicia sesión para continuar.")
+
+    def _on_login(self, username: str, nivel: str):
+        self._session.on_login(username, nivel)
+
+    def _on_logout(self):
+        self._session.on_logout()
+        self._show_login()
+
+    def _on_session_changed(self, username: str, nivel: str):
+        if username:
+            # Heredar nombre del login al campo encargado de validación
+            self.tab_validacion.set_encargado(username)
+
+            # Mostrar app
+            self._main_stack.setCurrentIndex(1)
+            self._set_tabs_locked(False)
+            nivel_label = "Admin" if nivel == "admin" else "Encargado"
+            self._lbl_user_badge.setText(f" {username}  [{nivel_label}]")
+            self._lbl_user_badge.show()
+            self._btn_logout.show()
+            self.status_bar.showMessage(
+                f"Sesión iniciada: {username} ({nivel_label}) — "
+                f"Auto-bloqueo en 10 min de inactividad."
+            )
+        else:
+            # Bloqueado / cerrado
+            self._lbl_user_badge.hide()
+            self._btn_logout.hide()
+
+    def _set_tabs_locked(self, locked: bool):
+        """Habilita o deshabilita las pestañas protegidas."""
+        for idx in LOCKED_TABS:
+            self.tabs.setTabEnabled(idx, not locked)
+        if locked:
+            # Mover a una pestaña libre (Dashboard)
+            self.tabs.setCurrentIndex(3)
+
+    def _on_tab_changed(self, idx: int):
+        """Evita entrar a pestañas bloqueadas si no hay sesión."""
+        if not self._session.logged_in and idx in LOCKED_TABS:
+            self.tabs.setCurrentIndex(3)
+
+    # ── Resize — ajustar overlay ─────────────────────────────────
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._session.resize_overlay(self.centralWidget().size())
 
     def closeEvent(self, event):
         self.tab_tester.cleanup()
@@ -619,7 +720,7 @@ class ESP32Tester(QMainWindow):
 #  MAIN
 # ══════════════════════════════════════════════════════════════
 if __name__ == "__main__":
-    QApplication.setAttribute(Qt.AA_ShareOpenGLContexts)  # ← fix WebEngine
+    QApplication.setAttribute(Qt.AA_ShareOpenGLContexts)
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     window = ESP32Tester()
