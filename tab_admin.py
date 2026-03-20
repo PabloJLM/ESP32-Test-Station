@@ -1,13 +1,27 @@
 import os
+import sys
 from datetime import datetime
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QGroupBox, QPushButton, QLabel, QLineEdit,
     QCheckBox, QMessageBox, QFrame, QStackedWidget,
-    QTextEdit, QSizePolicy,
+    QTextEdit, QSizePolicy, QSlider,
 )
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
 from PyQt5.QtGui import QFont
+
+
+# ══════════════════════════════════════════════════════════════
+#  RUTAS — funciona tanto en .py como en .exe (PyInstaller)
+# ══════════════════════════════════════════════════════════════
+def _resource_path(relative: str) -> str:
+    """
+    Resuelve rutas de recursos correctamente en desarrollo y
+    dentro de un .exe generado con PyInstaller / auto-py-to-exe.
+    """
+    if hasattr(sys, '_MEIPASS'):
+        return os.path.join(sys._MEIPASS, relative)
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), relative)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -55,6 +69,13 @@ CAT_COLORS = {
 # ══════════════════════════════════════════════════════════════
 FOTO1_TEXTO = "Hola"
 FOTO2_TEXTO = "Adios"
+
+# ══════════════════════════════════════════════════════════════
+#  RUTAS DE RECURSOS
+# ══════════════════════════════════════════════════════════════
+VIDEO_PATH = _resource_path(os.path.join("imgs", "reze.mp4"))
+FOTO1_PATH = _resource_path(os.path.join("imgs", "easter_egg3.jpeg"))
+FOTO2_PATH = _resource_path(os.path.join("imgs", "easter_egg2.jpeg"))
 
 
 # ══════════════════════════════════════════════════════════════
@@ -116,23 +137,19 @@ class ClearWorker(QThread):
 
 
 # ══════════════════════════════════════════════════════════════
-#  EASTER EGG
+#  FOTO CON TEXTO
 # ══════════════════════════════════════════════════════════════
-DRIVE_FILE_ID   = "1BRVWNvK01YWW8SQoycDn1It5Bzyre1IN"
-DRIVE_EMBED_URL = f"https://drive.google.com/file/d/{DRIVE_FILE_ID}/preview"
-
-
 class PhotoWidget(QWidget):
-    """Imagen con texto superpuesto encima."""
+    """Imagen con texto encima. Recibe la ruta ya resuelta."""
 
-    def __init__(self, filename: str, texto: str, base_dir: str):
+    def __init__(self, filepath: str, texto: str):
         super().__init__()
         self.setStyleSheet("background:transparent;")
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(6)
 
-        # ── Texto encima ──
+        # Texto encima
         lbl_txt = QLabel(texto)
         lbl_txt.setFont(QFont("Segoe UI", 18, QFont.Bold))
         lbl_txt.setAlignment(Qt.AlignCenter)
@@ -145,31 +162,199 @@ class PhotoWidget(QWidget):
         """)
         lay.addWidget(lbl_txt)
 
-        # ── Imagen ──
+        # Imagen
         lbl_img = QLabel()
         lbl_img.setAlignment(Qt.AlignCenter)
         lbl_img.setStyleSheet("background:transparent;")
-        path = os.path.join(base_dir, filename)
-        if os.path.exists(path):
+        if os.path.exists(filepath):
             from PyQt5.QtGui import QPixmap
-            pix = QPixmap(path).scaled(560, 300, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            pix = QPixmap(filepath).scaled(
+                560, 300, Qt.KeepAspectRatio, Qt.SmoothTransformation
+            )
             lbl_img.setPixmap(pix)
         else:
-            lbl_img.setText(f"[ {filename} no encontrada ]")
+            lbl_img.setText(f"[ imagen no encontrada ]\n{filepath}")
             lbl_img.setStyleSheet(f"color:{C_SUBTEXT}; font-size:11px;")
         lay.addWidget(lbl_img, 1)
 
 
+# ══════════════════════════════════════════════════════════════
+#  WIDGET DE VIDEO — python-vlc
+# ══════════════════════════════════════════════════════════════
+class VideoWidget(QWidget):
+    """
+    Reproductor con python-vlc (no depende de codecs del sistema).
+    Requisitos:
+        1. Instalar VLC desde videolan.org
+        2. pip install python-vlc
+    """
+
+    def __init__(self, filepath: str):
+        super().__init__()
+        self.setStyleSheet("background:black;")
+        self._filepath = filepath
+        self._ready    = False
+
+        try:
+            import vlc
+
+            lay = QVBoxLayout(self)
+            lay.setContentsMargins(0, 0, 0, 0)
+            lay.setSpacing(4)
+
+            # Frame donde VLC dibuja el video
+            self._frame = QFrame()
+            self._frame.setStyleSheet("background:black;")
+            self._frame.setMinimumHeight(300)
+            lay.addWidget(self._frame, 1)
+
+            # ── Controles ──────────────────────────────────────
+            ctrl = QHBoxLayout()
+            ctrl.setSpacing(8)
+
+            self._btn_play = QPushButton("▶")
+            self._btn_play.setFixedSize(36, 28)
+            self._btn_play.setStyleSheet(f"""
+                QPushButton {{
+                    background:{C_SURFACE}; color:{C_TEXT};
+                    border:1px solid {C_OVERLAY}; border-radius:4px;
+                    font-size:14px;
+                }}
+                QPushButton:hover {{ background:{C_OVERLAY}; }}
+            """)
+            self._btn_play.clicked.connect(self._toggle_play)
+
+            self._slider = QSlider(Qt.Horizontal)
+            self._slider.setRange(0, 1000)
+            self._slider.setStyleSheet(f"""
+                QSlider::groove:horizontal {{
+                    height: 4px; background: {C_OVERLAY}; border-radius: 2px;
+                }}
+                QSlider::handle:horizontal {{
+                    background: {C_MAUVE}; width: 12px; height: 12px;
+                    margin: -4px 0; border-radius: 6px;
+                }}
+                QSlider::sub-page:horizontal {{
+                    background: {C_MAUVE}; border-radius: 2px;
+                }}
+            """)
+            self._slider.sliderMoved.connect(self._seek)
+
+            self._lbl_time = QLabel("0:00 / 0:00")
+            self._lbl_time.setStyleSheet(f"color:{C_SUBTEXT}; font-size:10px;")
+            self._lbl_time.setFixedWidth(90)
+            self._lbl_time.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+
+            ctrl.addWidget(self._btn_play)
+            ctrl.addWidget(self._slider, 1)
+            ctrl.addWidget(self._lbl_time)
+            lay.addLayout(ctrl)
+
+            # ── VLC ────────────────────────────────────────────
+            self._instance = vlc.Instance("--no-xlib", "--quiet")
+            self._media    = self._instance.media_new(self._filepath)
+            self._player   = self._instance.media_player_new()
+            self._player.set_media(self._media)
+
+            # Vincular al frame de Qt según plataforma
+            wid = int(self._frame.winId())
+            if hasattr(self._player, 'set_hwnd'):        # Windows
+                self._player.set_hwnd(wid)
+            elif hasattr(self._player, 'set_xwindow'):   # Linux
+                self._player.set_xwindow(wid)
+            elif hasattr(self._player, 'set_nsobject'):  # macOS
+                self._player.set_nsobject(wid)
+
+            # Timer para actualizar slider/tiempo cada 500 ms
+            self._timer = QTimer(self)
+            self._timer.setInterval(500)
+            self._timer.timeout.connect(self._tick)
+
+            self._ready = True
+
+        except ImportError:
+            lay = QVBoxLayout(self)
+            lbl = QLabel(
+                "python-vlc no disponible.\n\n"
+                "1. Instala VLC desde videolan.org\n"
+                "2. pip install python-vlc"
+            )
+            lbl.setStyleSheet(
+                f"color:{C_RED}; background:{C_MANTLE}; "
+                f"padding:20px; font-size:12px;"
+            )
+            lbl.setAlignment(Qt.AlignCenter)
+            lbl.setWordWrap(True)
+            lay.addWidget(lbl)
+
+    # ── API pública ──────────────────────────────────────────────
+    def play(self):
+        if self._ready:
+            self._player.play()
+            self._timer.start()
+            self._btn_play.setText("⏸")
+
+    def stop(self):
+        if self._ready:
+            self._player.stop()
+            self._timer.stop()
+            self._btn_play.setText("▶")
+            self._slider.setValue(0)
+            self._lbl_time.setText("0:00 / 0:00")
+
+    def release(self):
+        if self._ready:
+            self._timer.stop()
+            self._player.stop()
+            self._player.release()
+            self._media.release()
+            self._instance.release()
+            self._ready = False
+
+    # ── Slots internos ───────────────────────────────────────────
+    def _toggle_play(self):
+        if not self._ready:
+            return
+        if self._player.is_playing():
+            self._player.pause()
+            self._btn_play.setText("▶")
+            self._timer.stop()
+        else:
+            self._player.play()
+            self._btn_play.setText("⏸")
+            self._timer.start()
+
+    def _seek(self, val):
+        if self._ready:
+            self._player.set_position(val / 1000.0)
+
+    def _tick(self):
+        if not self._ready:
+            return
+        pos = self._player.get_position()   # 0.0 – 1.0
+        dur = self._player.get_length()     # ms
+        cur = self._player.get_time()       # ms
+        self._slider.blockSignals(True)
+        self._slider.setValue(int(pos * 1000))
+        self._slider.blockSignals(False)
+        self._lbl_time.setText(f"{self._fmt(cur)} / {self._fmt(dur)}")
+
+    @staticmethod
+    def _fmt(ms: int) -> str:
+        if ms < 0:
+            return "0:00"
+        s = ms // 1000
+        return f"{s // 60}:{s % 60:02d}"
+
+
+# ══════════════════════════════════════════════════════════════
+#  EASTER EGG DIALOG
+# ══════════════════════════════════════════════════════════════
 class EasterEggDialog(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent, Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setStyleSheet(f"background:{C_MANTLE};")
-        self.setFixedSize(640, 520)
-        self._base = os.path.dirname(os.path.abspath(__file__))
-
-        self._web_profile = None
-        self._web_page    = None
-
+        self.setFixedSize(640, 540)
         self._build_ui()
         self._center()
 
@@ -182,22 +367,26 @@ class EasterEggDialog(QWidget):
         lbl.setFont(QFont("Segoe UI", 15, QFont.Bold))
         lbl.setStyleSheet(f"color:{C_MAUVE}; background:transparent;")
         lbl.setAlignment(Qt.AlignCenter)
-        lbl.setWordWrap(True)
         root.addWidget(lbl)
 
         self._stack = QStackedWidget()
         self._stack.setStyleSheet("background:transparent;")
 
-        self._web  = self._make_web()
-        self._img1 = PhotoWidget("imgs/easter_egg3.jpeg", FOTO1_TEXTO, self._base)
-        self._img2 = PhotoWidget("imgs/easter_egg2.jpeg", FOTO2_TEXTO, self._base)
+        # índice 0 — Video (ruta resuelta por _resource_path)
+        self._video_widget = VideoWidget(VIDEO_PATH)
+        self._stack.addWidget(self._video_widget)
 
-        self._stack.addWidget(self._web)    # índice 0
-        self._stack.addWidget(self._img1)   # índice 1
-        self._stack.addWidget(self._img2)   # índice 2
+        # índice 1 — Foto 1
+        self._img1 = PhotoWidget(FOTO1_PATH, FOTO1_TEXTO)
+        self._stack.addWidget(self._img1)
+
+        # índice 2 — Foto 2
+        self._img2 = PhotoWidget(FOTO2_PATH, FOTO2_TEXTO)
+        self._stack.addWidget(self._img2)
+
         root.addWidget(self._stack, 1)
 
-        # ── Botones de navegación ──
+        # ── Botones de navegación ──────────────────────────────
         btn_row = QHBoxLayout()
         btn_row.setSpacing(10)
 
@@ -246,69 +435,15 @@ class EasterEggDialog(QWidget):
         btn_row.addWidget(btn_cerrar)
         root.addLayout(btn_row)
 
-    # ── WebEngine ────────────────────────────────────────────────
-    def _make_web(self):
-        try:
-            from PyQt5.QtWebEngineWidgets import (
-                QWebEngineView, QWebEngineSettings,
-                QWebEngineProfile, QWebEnginePage
-            )
-
-            self._web_profile = QWebEngineProfile("tesla_drive")
-            self._web_profile.setHttpUserAgent(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/120.0.0.0 Safari/537.36"
-            )
-
-            self._web_page = QWebEnginePage(self._web_profile)
-
-            view = QWebEngineView()
-            view.setPage(self._web_page)
-
-            settings = view.settings()
-            settings.setAttribute(QWebEngineSettings.PlaybackRequiresUserGesture, False)
-            settings.setAttribute(QWebEngineSettings.JavascriptEnabled, True)
-            settings.setAttribute(QWebEngineSettings.LocalContentCanAccessRemoteUrls, True)
-            settings.setAttribute(QWebEngineSettings.AllowRunningInsecureContent, True)
-
-            view.setStyleSheet("background:black;")
-            view.setFixedHeight(340)
-            return view
-
-        except ImportError:
-            lbl = QLabel("QWebEngineView no disponible.\nInstala: pip install PyQtWebEngine")
-            lbl.setStyleSheet(f"color:{C_RED}; background:{C_MANTLE};")
-            lbl.setAlignment(Qt.AlignCenter)
-            return lbl
-
     # ── Navegación ───────────────────────────────────────────────
     def _switch(self, idx: int):
         if self._stack.currentIndex() == 0 and idx != 0:
-            self._stop_web()
+            self._video_widget.stop()
         if idx == 0:
-            self._load_video()
+            self._video_widget.play()
         self._stack.setCurrentIndex(idx)
         for i, (btn, active_s, normal_s) in enumerate(self._btns):
             btn.setStyleSheet(active_s if i == idx else normal_s)
-
-    def _load_video(self):
-        try:
-            from PyQt5.QtWebEngineWidgets import QWebEngineView
-            from PyQt5.QtCore import QUrl
-            if isinstance(self._web, QWebEngineView):
-                self._web.setUrl(QUrl(DRIVE_EMBED_URL))
-        except Exception:
-            pass
-
-    def _stop_web(self):
-        try:
-            from PyQt5.QtWebEngineWidgets import QWebEngineView
-            from PyQt5.QtCore import QUrl
-            if isinstance(self._web, QWebEngineView):
-                self._web.setUrl(QUrl("about:blank"))
-        except Exception:
-            pass
 
     # ── Ciclo de vida ────────────────────────────────────────────
     def _center(self):
@@ -319,27 +454,15 @@ class EasterEggDialog(QWidget):
         self.move(qr.topLeft())
 
     def _cerrar(self):
-        self._stop_web()
-        if self._web_page:
-            self._web_page.deleteLater()
-            self._web_page = None
-        if self._web_profile:
-            self._web_profile.deleteLater()
-            self._web_profile = None
+        self._video_widget.release()
         self.close()
 
     def showEvent(self, event):
         super().showEvent(event)
-        self._load_video()
+        QTimer.singleShot(400, self._video_widget.play)
 
     def closeEvent(self, event):
-        self._stop_web()
-        if self._web_page:
-            self._web_page.deleteLater()
-            self._web_page = None
-        if self._web_profile:
-            self._web_profile.deleteLater()
-            self._web_profile = None
+        self._video_widget.release()
         super().closeEvent(event)
 
 
@@ -383,7 +506,9 @@ class LoginWidget(QWidget):
         lay.addWidget(sep)
 
         lbl_user = QLabel("Usuario")
-        lbl_user.setStyleSheet(f"color:{C_SUBTEXT}; font-size:11px; background:transparent; border:none;")
+        lbl_user.setStyleSheet(
+            f"color:{C_SUBTEXT}; font-size:11px; background:transparent; border:none;"
+        )
         lay.addWidget(lbl_user)
         self.input_user = QLineEdit()
         self.input_user.setPlaceholderText("Ingresa tu usuario")
@@ -392,7 +517,9 @@ class LoginWidget(QWidget):
         lay.addWidget(self.input_user)
 
         lbl_pass = QLabel("Contrasena")
-        lbl_pass.setStyleSheet(f"color:{C_SUBTEXT}; font-size:11px; background:transparent; border:none;")
+        lbl_pass.setStyleSheet(
+            f"color:{C_SUBTEXT}; font-size:11px; background:transparent; border:none;"
+        )
         lay.addWidget(lbl_pass)
         self.input_pass = QLineEdit()
         self.input_pass.setEchoMode(QLineEdit.Password)
@@ -402,7 +529,9 @@ class LoginWidget(QWidget):
         lay.addWidget(self.input_pass)
 
         self.lbl_error = QLabel("")
-        self.lbl_error.setStyleSheet(f"color:{C_RED}; font-size:11px; background:transparent; border:none;")
+        self.lbl_error.setStyleSheet(
+            f"color:{C_RED}; font-size:11px; background:transparent; border:none;"
+        )
         self.lbl_error.setAlignment(Qt.AlignCenter)
         lay.addWidget(self.lbl_error)
 
@@ -440,7 +569,9 @@ class LoginWidget(QWidget):
             self.login_ok.emit(user)
         else:
             self._attempts += 1
-            self.lbl_error.setText(f"Usuario o contrasena incorrectos.  (intento {self._attempts})")
+            self.lbl_error.setText(
+                f"Usuario o contrasena incorrectos.  (intento {self._attempts})"
+            )
             self.input_pass.clear()
             self.input_pass.setFocus()
 
@@ -509,7 +640,10 @@ class AdminPanel(QWidget):
         """)
         outer = QVBoxLayout(box)
 
-        warn = QLabel("Esta accion borra TODOS los registros de las hojas seleccionadas. No se puede deshacer.")
+        warn = QLabel(
+            "Esta accion borra TODOS los registros de las hojas seleccionadas. "
+            "No se puede deshacer."
+        )
         warn.setStyleSheet(f"""
             color: {C_YELLOW}; font-size: 11px;
             background: #2a2010; border: 1px solid #5a4a10;
@@ -554,7 +688,9 @@ class AdminPanel(QWidget):
                 QPushButton:hover {{ background: {C_OVERLAY}; }}
             """)
             val = checked
-            btn.clicked.connect(lambda _, v=val: [cb.setChecked(v) for cb in self._checks.values()])
+            btn.clicked.connect(
+                lambda _, v=val: [cb.setChecked(v) for cb in self._checks.values()]
+            )
             quick.addWidget(btn)
         quick.addStretch()
         outer.addLayout(quick)
@@ -620,7 +756,9 @@ class AdminPanel(QWidget):
             return
         self.btn_borrar.setEnabled(False)
         self._log(f"Iniciando borrado: {', '.join(targets)}", C_YELLOW)
-        self._worker = ClearWorker(self.sheet_id, self.sheet_map, targets, self.header_row)
+        self._worker = ClearWorker(
+            self.sheet_id, self.sheet_map, targets, self.header_row
+        )
         self._worker.progress.connect(self._on_progress)
         self._worker.finished.connect(self._on_finished)
         self._worker.start()
