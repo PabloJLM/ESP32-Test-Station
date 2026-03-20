@@ -619,6 +619,7 @@ class ESP32Tester(QMainWindow):
 #  MAIN
 # ══════════════════════════════════════════════════════════════
 if __name__ == "__main__":
+    QApplication.setAttribute(Qt.AA_ShareOpenGLContexts)  # ← fix WebEngine
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     window = ESP32Tester()

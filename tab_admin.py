@@ -10,8 +10,9 @@ from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QFont
 
 
-
-#preguntar quienes van aca xd
+# ══════════════════════════════════════════════════════════════
+#  USUARIOS
+# ══════════════════════════════════════════════════════════════
 USERS = {
     "admin1": "balam2026",
     "admin2": "balam2026",
@@ -19,10 +20,12 @@ USERS = {
     "admin4": "balam2026",
 }
 
-#ee
-EASTER_USER = "".join([chr(x) for x in [74,111,74,111,80,74]])
-EASTER_PASS = "".join([chr(x) for x in [89,97,110,105,114,97]])
+EASTER_USER = "".join([chr(x) for x in [74, 111, 74, 111, 80, 74]])
+EASTER_PASS = "".join([chr(x) for x in [89, 97, 110, 105, 114, 97]])
 
+# ══════════════════════════════════════════════════════════════
+#  COLORES Catppuccin Mocha
+# ══════════════════════════════════════════════════════════════
 C_BASE    = "#1e1e2e"
 C_MANTLE  = "#181825"
 C_SURFACE = "#313244"
@@ -47,10 +50,18 @@ CAT_COLORS = {
     "IOT":         C_GREEN,
 }
 
+# ══════════════════════════════════════════════════════════════
+#  TEXTOS DE LAS FOTOS  ← cambiar aquí
+# ══════════════════════════════════════════════════════════════
+FOTO1_TEXTO = "Hola"
+FOTO2_TEXTO = "Adios"
 
-#borrado de gspread
+
+# ══════════════════════════════════════════════════════════════
+#  WORKER BORRADO SHEETS
+# ══════════════════════════════════════════════════════════════
 class ClearWorker(QThread):
-    progress = pyqtSignal(str, bool)   # (mensaje, es_error)
+    progress = pyqtSignal(str, bool)
     finished = pyqtSignal()
 
     def __init__(self, sheet_id, sheet_map, targets, header_row=1):
@@ -83,7 +94,6 @@ class ClearWorker(QThread):
                     end   = len(all_vals)
                     ws.batch_clear([f"A{start}:E{end}"])
 
-                    # Limpiar color de columna A
                     for row in range(start, end + 1):
                         try:
                             ws.format(f"A{row}", {
@@ -105,16 +115,49 @@ class ClearWorker(QThread):
         self.finished.emit()
 
 
+# ══════════════════════════════════════════════════════════════
+#  EASTER EGG
+# ══════════════════════════════════════════════════════════════
+DRIVE_FILE_ID   = "1BRVWNvK01YWW8SQoycDn1It5Bzyre1IN"
+DRIVE_EMBED_URL = f"https://drive.google.com/file/d/{DRIVE_FILE_ID}/preview"
 
-#easter egg no tocar jsjsjsjs
 
-YOUTUBE_URL = "https://youtu.be/ocBJ-lao81o"
+class PhotoWidget(QWidget):
+    """Imagen con texto superpuesto encima."""
 
-def _yt_embed(url: str) -> str:
-    import re
-    m = re.search(r"(?:v=|youtu\.be/)([\w-]{11})", url)
-    vid_id = m.group(1) if m else url
-    return f"https://www.youtube.com/embed/{vid_id}?autoplay=1&rel=0"
+    def __init__(self, filename: str, texto: str, base_dir: str):
+        super().__init__()
+        self.setStyleSheet("background:transparent;")
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(6)
+
+        # ── Texto encima ──
+        lbl_txt = QLabel(texto)
+        lbl_txt.setFont(QFont("Segoe UI", 18, QFont.Bold))
+        lbl_txt.setAlignment(Qt.AlignCenter)
+        lbl_txt.setWordWrap(True)
+        lbl_txt.setStyleSheet(f"""
+            color: {C_MAUVE};
+            background: rgba(30, 30, 46, 180);
+            border-radius: 8px;
+            padding: 6px 18px;
+        """)
+        lay.addWidget(lbl_txt)
+
+        # ── Imagen ──
+        lbl_img = QLabel()
+        lbl_img.setAlignment(Qt.AlignCenter)
+        lbl_img.setStyleSheet("background:transparent;")
+        path = os.path.join(base_dir, filename)
+        if os.path.exists(path):
+            from PyQt5.QtGui import QPixmap
+            pix = QPixmap(path).scaled(560, 300, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            lbl_img.setPixmap(pix)
+        else:
+            lbl_img.setText(f"[ {filename} no encontrada ]")
+            lbl_img.setStyleSheet(f"color:{C_SUBTEXT}; font-size:11px;")
+        lay.addWidget(lbl_img, 1)
 
 
 class EasterEggDialog(QWidget):
@@ -123,6 +166,10 @@ class EasterEggDialog(QWidget):
         self.setStyleSheet(f"background:{C_MANTLE};")
         self.setFixedSize(640, 520)
         self._base = os.path.dirname(os.path.abspath(__file__))
+
+        self._web_profile = None
+        self._web_page    = None
+
         self._build_ui()
         self._center()
 
@@ -131,29 +178,26 @@ class EasterEggDialog(QWidget):
         root.setContentsMargins(20, 18, 20, 18)
         root.setSpacing(12)
 
-        EASTER_TEXT = "Hecho por JoJoPJ"
-        lbl = QLabel(EASTER_TEXT)
+        lbl = QLabel("Hecho por JoJoPJ")
         lbl.setFont(QFont("Segoe UI", 15, QFont.Bold))
         lbl.setStyleSheet(f"color:{C_MAUVE}; background:transparent;")
         lbl.setAlignment(Qt.AlignCenter)
         lbl.setWordWrap(True)
         root.addWidget(lbl)
 
-        from PyQt5.QtWidgets import QStackedWidget
         self._stack = QStackedWidget()
         self._stack.setStyleSheet("background:transparent;")
 
-        self._web = self._make_web()
-        self._stack.addWidget(self._web)          # indice 0
-        #imgs
-        self._img1 = self._make_img_label("imgs/easter_egg3.jpeg")
-        self._img2 = self._make_img_label("imgs/easter_egg2.jpeg")
-        self._stack.addWidget(self._img1)         # indice 1
-        self._stack.addWidget(self._img2)         # indice 2
+        self._web  = self._make_web()
+        self._img1 = PhotoWidget("imgs/easter_egg3.jpeg", FOTO1_TEXTO, self._base)
+        self._img2 = PhotoWidget("imgs/easter_egg2.jpeg", FOTO2_TEXTO, self._base)
 
+        self._stack.addWidget(self._web)    # índice 0
+        self._stack.addWidget(self._img1)   # índice 1
+        self._stack.addWidget(self._img2)   # índice 2
         root.addWidget(self._stack, 1)
 
-        # ── Botones de navegacion ──
+        # ── Botones de navegación ──
         btn_row = QHBoxLayout()
         btn_row.setSpacing(10)
 
@@ -177,13 +221,11 @@ class EasterEggDialog(QWidget):
         """
 
         self._btns = []
-        labels = ["Video", "Foto 1", "Foto 2"]
-        for i, label in enumerate(labels):
+        for i, label in enumerate(["Video", "Foto 1", "Foto 2"]):
             b = QPushButton(label)
             b.setFixedHeight(32)
             b.setStyleSheet(btn_style_active if i == 0 else btn_style_normal)
-            idx = i
-            b.clicked.connect(lambda _, x=idx: self._switch(x))
+            b.clicked.connect(lambda _, x=i: self._switch(x))
             btn_row.addWidget(b)
             self._btns.append((b, btn_style_active, btn_style_normal))
 
@@ -202,71 +244,73 @@ class EasterEggDialog(QWidget):
         """)
         btn_cerrar.clicked.connect(self._cerrar)
         btn_row.addWidget(btn_cerrar)
-
         root.addLayout(btn_row)
 
+    # ── WebEngine ────────────────────────────────────────────────
     def _make_web(self):
         try:
-            from PyQt5.QtWebEngineWidgets import QWebEngineView
+            from PyQt5.QtWebEngineWidgets import (
+                QWebEngineView, QWebEngineSettings,
+                QWebEngineProfile, QWebEnginePage
+            )
+
+            self._web_profile = QWebEngineProfile("tesla_drive")
+            self._web_profile.setHttpUserAgent(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/120.0.0.0 Safari/537.36"
+            )
+
+            self._web_page = QWebEnginePage(self._web_profile)
+
             view = QWebEngineView()
+            view.setPage(self._web_page)
+
+            settings = view.settings()
+            settings.setAttribute(QWebEngineSettings.PlaybackRequiresUserGesture, False)
+            settings.setAttribute(QWebEngineSettings.JavascriptEnabled, True)
+            settings.setAttribute(QWebEngineSettings.LocalContentCanAccessRemoteUrls, True)
+            settings.setAttribute(QWebEngineSettings.AllowRunningInsecureContent, True)
+
             view.setStyleSheet("background:black;")
             view.setFixedHeight(340)
             return view
+
         except ImportError:
             lbl = QLabel("QWebEngineView no disponible.\nInstala: pip install PyQtWebEngine")
             lbl.setStyleSheet(f"color:{C_RED}; background:{C_MANTLE};")
             lbl.setAlignment(Qt.AlignCenter)
             return lbl
 
-    def _make_img_label(self, filename: str):
-        lbl = QLabel()
-        lbl.setAlignment(Qt.AlignCenter)
-        lbl.setStyleSheet("background:transparent;")
-        path = os.path.join(self._base, filename)
-        if os.path.exists(path):
-            from PyQt5.QtGui import QPixmap
-            pix = QPixmap(path).scaled(560, 340, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            lbl.setPixmap(pix)
-        else:
-            lbl.setText(f"[ {filename} no encontrada ]")
-            lbl.setStyleSheet(f"color:{C_SUBTEXT}; font-size:11px; background:transparent;")
-        return lbl
-
+    # ── Navegación ───────────────────────────────────────────────
     def _switch(self, idx: int):
-        # Detener video si se sale de el
         if self._stack.currentIndex() == 0 and idx != 0:
             self._stop_web()
-        # Cargar video si se vuelve a el
         if idx == 0:
             self._load_video()
         self._stack.setCurrentIndex(idx)
-        # Actualizar estilos de botones
         for i, (btn, active_s, normal_s) in enumerate(self._btns):
             btn.setStyleSheet(active_s if i == idx else normal_s)
 
     def _load_video(self):
         try:
             from PyQt5.QtWebEngineWidgets import QWebEngineView
+            from PyQt5.QtCore import QUrl
             if isinstance(self._web, QWebEngineView):
-                embed = _yt_embed(YOUTUBE_URL)
-                html = f"""<!DOCTYPE html>
-<html><body style="margin:0;background:#000;">
-<iframe width="100%" height="100%" src="{embed}"
-  frameborder="0" allow="autoplay; encrypted-media"
-  allowfullscreen></iframe>
-</body></html>"""
-                self._web.setHtml(html)
+                self._web.setUrl(QUrl(DRIVE_EMBED_URL))
         except Exception:
             pass
 
     def _stop_web(self):
         try:
             from PyQt5.QtWebEngineWidgets import QWebEngineView
+            from PyQt5.QtCore import QUrl
             if isinstance(self._web, QWebEngineView):
-                self._web.setHtml("<html><body style='background:#000'></body></html>")
+                self._web.setUrl(QUrl("about:blank"))
         except Exception:
             pass
 
+    # ── Ciclo de vida ────────────────────────────────────────────
     def _center(self):
         from PyQt5.QtWidgets import QDesktopWidget
         qr = self.frameGeometry()
@@ -276,14 +320,32 @@ class EasterEggDialog(QWidget):
 
     def _cerrar(self):
         self._stop_web()
+        if self._web_page:
+            self._web_page.deleteLater()
+            self._web_page = None
+        if self._web_profile:
+            self._web_profile.deleteLater()
+            self._web_profile = None
         self.close()
 
     def showEvent(self, event):
         super().showEvent(event)
-        self._load_video()   # autoplay al abrir
+        self._load_video()
+
+    def closeEvent(self, event):
+        self._stop_web()
+        if self._web_page:
+            self._web_page.deleteLater()
+            self._web_page = None
+        if self._web_profile:
+            self._web_profile.deleteLater()
+            self._web_profile = None
+        super().closeEvent(event)
 
 
-#importante otra vez xd
+# ══════════════════════════════════════════════════════════════
+#  LOGIN
+# ══════════════════════════════════════════════════════════════
 class LoginWidget(QWidget):
     login_ok = pyqtSignal(str)
 
@@ -348,15 +410,12 @@ class LoginWidget(QWidget):
         self.btn_login.setFixedHeight(38)
         self.btn_login.setStyleSheet(f"""
             QPushButton {{
-                background: #2563eb;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                font-size: 13px;
-                font-weight: 700;
+                background: #2563eb; color: white;
+                border: none; border-radius: 6px;
+                font-size: 13px; font-weight: 700;
             }}
-            QPushButton:hover    {{ background: #1d4ed8; }}
-            QPushButton:pressed  {{ background: #1e40af; }}
+            QPushButton:hover   {{ background: #1d4ed8; }}
+            QPushButton:pressed {{ background: #1e40af; }}
             QPushButton:disabled {{ background: #1e3a6e; color: #7a9fd6; }}
         """)
         self.btn_login.clicked.connect(self._do_login)
@@ -367,13 +426,14 @@ class LoginWidget(QWidget):
     def _do_login(self):
         user = self.input_user.text().strip()
         pwd  = self.input_pass.text()
-        # Easter egg
+
         if user == EASTER_USER and pwd == EASTER_PASS:
             self.input_pass.clear()
             self.lbl_error.setText("")
             self._egg = EasterEggDialog(self)
             self._egg.show()
             return
+
         if USERS.get(user) == pwd:
             self.lbl_error.setText("")
             self.input_pass.clear()
@@ -391,7 +451,9 @@ class LoginWidget(QWidget):
         self._attempts = 0
 
 
-# panel
+# ══════════════════════════════════════════════════════════════
+#  PANEL ADMIN
+# ══════════════════════════════════════════════════════════════
 class AdminPanel(QWidget):
     logout = pyqtSignal()
 
@@ -412,7 +474,6 @@ class AdminPanel(QWidget):
         root.setSpacing(12)
         root.setContentsMargins(16, 14, 16, 14)
 
-        # Barra superior
         top = QHBoxLayout()
         self.lbl_user = QLabel("Sesion: —")
         self.lbl_user.setStyleSheet(f"color:{C_TEAL}; font-size:12px; font-weight:600;")
@@ -422,13 +483,9 @@ class AdminPanel(QWidget):
         btn_logout.setFixedWidth(130)
         btn_logout.setStyleSheet(f"""
             QPushButton {{
-                background: {C_SURFACE};
-                color: {C_RED};
-                border: 1px solid {C_RED};
-                border-radius: 5px;
-                font-size: 12px;
-                font-weight: 600;
-                padding: 4px 10px;
+                background: {C_SURFACE}; color: {C_RED};
+                border: 1px solid {C_RED}; border-radius: 5px;
+                font-size: 12px; font-weight: 600; padding: 4px 10px;
             }}
             QPushButton:hover {{ background: #3b1a1a; }}
         """)
@@ -444,29 +501,19 @@ class AdminPanel(QWidget):
         box = QGroupBox("Seleccionar hojas a limpiar")
         box.setStyleSheet(f"""
             QGroupBox {{
-                border: 1px solid {C_OVERLAY};
-                border-radius: 8px;
-                margin-top: 10px;
-                font-weight: bold;
-                color: {C_RED};
-                padding: 10px;
+                border: 1px solid {C_OVERLAY}; border-radius: 8px;
+                margin-top: 10px; font-weight: bold;
+                color: {C_RED}; padding: 10px;
             }}
-            QGroupBox::title {{
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 6px;
-            }}
+            QGroupBox::title {{ subcontrol-origin: margin; left: 10px; padding: 0 6px; }}
         """)
         outer = QVBoxLayout(box)
 
         warn = QLabel("Esta accion borra TODOS los registros de las hojas seleccionadas. No se puede deshacer.")
         warn.setStyleSheet(f"""
-            color: {C_YELLOW};
-            font-size: 11px;
-            background: #2a2010;
-            border: 1px solid #5a4a10;
-            border-radius: 6px;
-            padding: 8px 12px;
+            color: {C_YELLOW}; font-size: 11px;
+            background: #2a2010; border: 1px solid #5a4a10;
+            border-radius: 6px; padding: 8px 12px;
         """)
         warn.setWordWrap(True)
         outer.addWidget(warn)
@@ -478,21 +525,16 @@ class AdminPanel(QWidget):
             cb    = QCheckBox(name)
             cb.setStyleSheet(f"""
                 QCheckBox {{
-                    color: {color};
-                    font-size: 13px;
-                    font-weight: 600;
-                    spacing: 8px;
-                    background: transparent;
+                    color: {color}; font-size: 13px; font-weight: 600;
+                    spacing: 8px; background: transparent;
                 }}
                 QCheckBox::indicator {{
                     width: 18px; height: 18px;
-                    border: 2px solid {color};
-                    border-radius: 4px;
+                    border: 2px solid {color}; border-radius: 4px;
                     background: {C_SURFACE};
                 }}
                 QCheckBox::indicator:checked {{
-                    background: {color};
-                    border: 2px solid {color};
+                    background: {color}; border: 2px solid {color};
                 }}
             """)
             self._checks[name] = cb
@@ -522,12 +564,9 @@ class AdminPanel(QWidget):
         box = QGroupBox("Registro de operaciones")
         box.setStyleSheet(f"""
             QGroupBox {{
-                border: 1px solid {C_OVERLAY};
-                border-radius: 8px;
-                margin-top: 10px;
-                font-weight: bold;
-                color: {C_BLUE};
-                padding: 6px;
+                border: 1px solid {C_OVERLAY}; border-radius: 8px;
+                margin-top: 10px; font-weight: bold;
+                color: {C_BLUE}; padding: 6px;
             }}
             QGroupBox::title {{ subcontrol-origin: margin; left: 10px; padding: 0 6px; }}
         """)
@@ -536,12 +575,9 @@ class AdminPanel(QWidget):
         self.log.setReadOnly(True)
         self.log.setStyleSheet(f"""
             QTextEdit {{
-                background: {C_MANTLE};
-                color: {C_TEXT};
-                border: none;
-                border-radius: 4px;
-                font-family: Consolas, monospace;
-                font-size: 12px;
+                background: {C_MANTLE}; color: {C_TEXT};
+                border: none; border-radius: 4px;
+                font-family: Consolas, monospace; font-size: 12px;
             }}
         """)
         lay.addWidget(self.log)
@@ -556,8 +592,7 @@ class AdminPanel(QWidget):
         self.btn_borrar.setStyleSheet(f"""
             QPushButton {{
                 background: #7f1d1d; color: {C_RED};
-                border: 1px solid #ef4444;
-                border-radius: 6px;
+                border: 1px solid #ef4444; border-radius: 6px;
                 font-size: 13px; font-weight: 700;
             }}
             QPushButton:hover    {{ background: #991b1b; }}
@@ -611,7 +646,9 @@ class AdminPanel(QWidget):
             self._worker.terminate()
 
 
-#pestañaaaaaa
+# ══════════════════════════════════════════════════════════════
+#  PESTAÑA ADMIN
+# ══════════════════════════════════════════════════════════════
 class TabAdmin(QWidget):
     status_msg = pyqtSignal(str)
 
