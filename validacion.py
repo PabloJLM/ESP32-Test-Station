@@ -116,7 +116,7 @@ class CameraThread(QThread):
             import cv2
         except ImportError:
             return
-        cap = cv2.VideoCapture(self.cam_id)
+        cap = cv2.VideoCapture(self.cam_id, cv2.CAP_DSHOW)
         cap.set(cv2.CAP_PROP_FRAME_WIDTH,  640)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
         qcd = cv2.QRCodeDetector()
