@@ -28,6 +28,7 @@ CATEGORIAS = ["ESP32", "Robofut", "Todoterreno", "STEM SR", "STEM JR", "Drones",
 #  CARPETA LOCAL — variable de modulo, persiste mientras corre la app
 # ══════════════════════════════════════════════════════════════
 
+REPORTS_ROOT_NAME = "REPORTES_BALAM2026"
 _reports_root = ""
 
 
@@ -41,16 +42,17 @@ def _ask_reports_root(parent=None) -> str:
 
 
 def _get_reports_dir(categoria: str, parent=None) -> str:
-    # Devuelve <raiz>/<categoria>/ y la crea si no existe.
-    # Si ya existe la usa directamente sin preguntar.
     global _reports_root
     if not _reports_root:
         path = _ask_reports_root(parent)
         if not path:
             raise RuntimeError("No se selecciono una carpeta de destino.")
-        _reports_root = path
+        # Crea <carpeta elegida>/REPORTES_BALAM2026/ como raiz fija
+        _reports_root = os.path.join(path, REPORTS_ROOT_NAME)
+        os.makedirs(_reports_root, exist_ok=True)
+
     dest = os.path.join(_reports_root, categoria)
-    os.makedirs(dest, exist_ok=True)   # exist_ok=True: no falla si ya existe
+    os.makedirs(dest, exist_ok=True)
     return dest
 
 
