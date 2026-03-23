@@ -20,7 +20,6 @@ APP_USERS = {
 # Minutos de inactividad antes de bloquear
 DORMIR = 10
 
-# ── Colores Catppuccin Mocha ──────────────────────────────────
 C_BASE    = "#1e1e2e"
 C_MANTLE  = "#181825"
 C_SURFACE = "#313244"
@@ -189,10 +188,6 @@ class LoginScreen(QWidget):
         self.input_user.setFocus()
 
 class LockOverlay(QWidget):
-    """
-    Overlay semitransparente que bloquea la ventana principal
-    y muestra el login de re-autenticación.
-    """
     unlocked = pyqtSignal(str, str)   # (username, nivel)
 
     def __init__(self, logo_path=None, parent=None):
@@ -324,13 +319,6 @@ class LockOverlay(QWidget):
         self.input_user.setFocus()
 
 class SessionManager:
-    """
-    Controla el estado de sesión y el auto-bloqueo por inactividad.
-
-    Uso en ESP32Tester:
-        self._session = SessionManager(main_window, logo_path)
-        self._session.session_changed.connect(self._on_session_changed)
-    """
 
     class _Signals(QWidget):
         session_changed = pyqtSignal(str, str)   
