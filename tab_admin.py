@@ -12,7 +12,6 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
 from PyQt5.QtGui import QFont
 
-# Importa las funciones de carpeta de validacion.py
 from validacion import (
     get_current_reports_root,
     reset_reports_root,
@@ -20,20 +19,14 @@ from validacion import (
 )
 
 
-# ══════════════════════════════════════════════════════════════
-#  HELPER DE RUTA
-# ══════════════════════════════════════════════════════════════
-
 def _resource_path(relative: str) -> str:
     # Resuelve rutas para .py y para .exe generado con PyInstaller
+    #ni idea de como funciona xd
     if hasattr(sys, '_MEIPASS'):
         return os.path.join(sys._MEIPASS, relative)
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), relative)
 
 
-# ══════════════════════════════════════════════════════════════
-#  USUARIOS
-# ══════════════════════════════════════════════════════════════
 USERS = {
     "admin1": "balam2026",
     "admin2": "balam2026",
@@ -44,9 +37,6 @@ USERS = {
 EASTER_USER = "".join([chr(x) for x in [74, 111, 74, 111, 80, 74]])
 EASTER_PASS = "".join([chr(x) for x in [89, 97, 110, 105, 114, 97]])
 
-# ══════════════════════════════════════════════════════════════
-#  COLORES
-# ══════════════════════════════════════════════════════════════
 C_BASE    = "#1e1e2e"
 C_MANTLE  = "#181825"
 C_SURFACE = "#313244"
@@ -74,14 +64,11 @@ CAT_COLORS = {
 FOTO1_TEXTO = "Hola"
 FOTO2_TEXTO = "Adios"
 
-VIDEO_PATH = _resource_path(os.path.join("imgs", "easter_egg.mp4"))
+VIDEO_PATH = _resource_path(os.path.join("imgs", "reze.mp4"))
 FOTO1_PATH = _resource_path(os.path.join("imgs", "easter_egg3.jpeg"))
 FOTO2_PATH = _resource_path(os.path.join("imgs", "easter_egg2.jpeg"))
 
 
-# ══════════════════════════════════════════════════════════════
-#  WORKER BORRADO SHEETS
-# ══════════════════════════════════════════════════════════════
 class ClearWorker(QThread):
     progress = pyqtSignal(str, bool)
     finished = pyqtSignal()
@@ -129,9 +116,6 @@ class ClearWorker(QThread):
         self.finished.emit()
 
 
-# ══════════════════════════════════════════════════════════════
-#  FOTO CON TEXTO
-# ══════════════════════════════════════════════════════════════
 class PhotoWidget(QWidget):
     def __init__(self, filepath: str, texto: str):
         super().__init__()
@@ -160,9 +144,6 @@ class PhotoWidget(QWidget):
         lay.addWidget(lbl_img, 1)
 
 
-# ══════════════════════════════════════════════════════════════
-#  WIDGET DE VIDEO
-# ══════════════════════════════════════════════════════════════
 class VideoWidget(QWidget):
     def __init__(self, filepath: str):
         super().__init__()
@@ -268,9 +249,7 @@ class VideoWidget(QWidget):
         return f"{s // 60}:{s % 60:02d}"
 
 
-# ══════════════════════════════════════════════════════════════
-#  EASTER EGG
-# ══════════════════════════════════════════════════════════════
+# easter egg!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 class EasterEggDialog(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent, Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
@@ -355,9 +334,6 @@ class EasterEggDialog(QWidget):
         self._video_widget.release(); super().closeEvent(event)
 
 
-# ══════════════════════════════════════════════════════════════
-#  LOGIN
-# ══════════════════════════════════════════════════════════════
 class LoginWidget(QWidget):
     login_ok = pyqtSignal(str)
 
@@ -437,10 +413,6 @@ class LoginWidget(QWidget):
         self.input_user.clear(); self.input_pass.clear()
         self.lbl_error.setText(""); self._attempts = 0
 
-
-# ══════════════════════════════════════════════════════════════
-#  PANEL ADMIN
-# ══════════════════════════════════════════════════════════════
 class AdminPanel(QWidget):
     logout = pyqtSignal()
 
@@ -538,7 +510,6 @@ class AdminPanel(QWidget):
         outer = QVBoxLayout(box)
         outer.setSpacing(10)
 
-        # Muestra la carpeta raiz actual
         row_info = QHBoxLayout()
         lbl = QLabel("Carpeta raiz:")
         lbl.setFixedWidth(100)
@@ -550,7 +521,6 @@ class AdminPanel(QWidget):
         row_info.addWidget(self._lbl_root, 1)
         outer.addLayout(row_info)
 
-        # Botones de gestion
         btn_row = QHBoxLayout()
 
         btn_cambiar = QPushButton("Cambiar carpeta raiz")
@@ -576,7 +546,6 @@ class AdminPanel(QWidget):
         btn_row.addStretch()
         outer.addLayout(btn_row)
 
-        # Selector de categoria + boton de limpieza
         clean_row = QHBoxLayout()
         lbl_cat = QLabel("Limpiar categoria:")
         lbl_cat.setStyleSheet(f"color:{C_TEXT}; font-weight:600;")
@@ -645,7 +614,6 @@ class AdminPanel(QWidget):
         self._lbl_count.setText(f"{count} PDF(s)")
 
     def _cambiar_carpeta_raiz(self):
-        # Resetea la raiz y abre el explorador para elegir una nueva
         reset_reports_root()
         nueva = _ask_reports_root(parent=self)
         if nueva:
@@ -678,7 +646,6 @@ class AdminPanel(QWidget):
             return
         cat = self._combo_cat.currentText()
         if cat == "Todas las categorias":
-            # Elimina y recrea todas las subcarpetas
             subcarpetas = [
                 d for d in os.listdir(root)
                 if os.path.isdir(os.path.join(root, d))
@@ -701,7 +668,6 @@ class AdminPanel(QWidget):
                 os.makedirs(path, exist_ok=True)
             self._log(f"Todas las categorias limpiadas ({total} PDF(s) eliminados).", C_YELLOW)
         else:
-            # Elimina y recrea solo la subcarpeta de la categoria elegida
             path  = os.path.join(root, cat)
             count = len([f for f in os.listdir(path) if f.endswith(".pdf")]) if os.path.isdir(path) else 0
             reply = QMessageBox.question(
@@ -794,9 +760,6 @@ class AdminPanel(QWidget):
             self._worker.terminate()
 
 
-# ══════════════════════════════════════════════════════════════
-#  PESTANA ADMIN
-# ══════════════════════════════════════════════════════════════
 class TabAdmin(QWidget):
     status_msg = pyqtSignal(str)
 
@@ -815,7 +778,6 @@ class TabAdmin(QWidget):
         root.addWidget(self._stack)
 
     def _on_login(self, username):
-        # Rellena el combo de categorias con los nombres del sheet_map
         combo = self._admin_panel._combo_cat
         combo.clear()
         combo.addItem("Todas las categorias")
