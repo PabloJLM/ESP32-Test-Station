@@ -104,10 +104,6 @@ QSplitter::handle             { background: #45475a; width: 2px; }
 QLabel                        { color: #cdd6f4; }
 """
 
-
-# ══════════════════════════════════════════════════════════════
-#  HILO LECTOR SERIAL
-# ══════════════════════════════════════════════════════════════
 class SerialReader(QThread):
     data_received   = pyqtSignal(str)
     connection_lost = pyqtSignal()
