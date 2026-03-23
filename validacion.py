@@ -30,8 +30,6 @@ def _ask_reports_root(parent=None) -> str:
 
 
 def _get_reports_dir(categoria: str, parent=None) -> str:
-    # Devuelve la ruta <raiz>/<categoria>/ y la crea si no existe.
-    # Si la raiz no esta fijada, la pide al usuario primero.
     global _reports_root
 
     if not _reports_root:
@@ -46,7 +44,6 @@ def _get_reports_dir(categoria: str, parent=None) -> str:
 
 
 def reset_reports_root():
-    # Permite al admin resetear la carpeta raiz para elegir una nueva
     global _reports_root
     _reports_root = ""
 
@@ -54,9 +51,8 @@ def reset_reports_root():
 def get_current_reports_root() -> str:
     return _reports_root
 
-
+#ve si tiene internet sjjs
 def _has_internet(host="8.8.8.8", port=53, timeout=2) -> bool:
-    # Verifica conectividad con un ping simple a Google DNS
     try:
         socket.setdefaulttimeout(timeout)
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -67,9 +63,6 @@ def _has_internet(host="8.8.8.8", port=53, timeout=2) -> bool:
         return False
 
 
-# ══════════════════════════════════════════════════════════════
-#  HILO SUBIDA A DRIVE
-# ══════════════════════════════════════════════════════════════
 class DriveUploadWorker(QThread):
     done = pyqtSignal(bool, str)
 
@@ -106,10 +99,6 @@ class DriveUploadWorker(QThread):
         except Exception as e:
             self.done.emit(False, str(e))
 
-
-# ══════════════════════════════════════════════════════════════
-#  HILO CAMARA
-# ══════════════════════════════════════════════════════════════
 class CameraThread(QThread):
     frame_ready = pyqtSignal(QImage)
     qr_detected = pyqtSignal(str)
@@ -161,9 +150,6 @@ class CameraThread(QThread):
         self.wait()
 
 
-# ══════════════════════════════════════════════════════════════
-#  HILO GOOGLE SHEETS
-# ══════════════════════════════════════════════════════════════
 class SheetsWorker(QThread):
     done = pyqtSignal(bool, str)
 
@@ -213,9 +199,6 @@ class SheetsWorker(QThread):
             self.done.emit(False, str(e))
 
 
-# ══════════════════════════════════════════════════════════════
-#  GENERADOR DE REPORTE PDF
-# ══════════════════════════════════════════════════════════════
 def generar_reporte_pdf(data: dict, qr_pattern, logo_path: str = None,
                         output_dir: str = None) -> str:
     from reportlab.lib.pagesizes import letter
@@ -334,9 +317,6 @@ def generar_reporte_pdf(data: dict, qr_pattern, logo_path: str = None,
     return fpath
 
 
-# ══════════════════════════════════════════════════════════════
-#  PESTANA VALIDACION
-# ══════════════════════════════════════════════════════════════
 class TabValidacion(QWidget):
     status_msg = pyqtSignal(str)
 
@@ -613,7 +593,6 @@ class TabValidacion(QWidget):
             return
         try:
             # Resuelve la carpeta <raiz>/<categoria>/
-            # Si es la primera vez, abre el explorador para elegir la raiz
             categoria = self.last_qr['sheet']
             dest_dir  = _get_reports_dir(categoria, parent=self)
 
@@ -626,7 +605,6 @@ class TabValidacion(QWidget):
             self._log(f"PDF guardado: {pdf_path}", "#a6e3a1")
             self.status_msg.emit(f"PDF guardado: {os.path.basename(pdf_path)}")
 
-            # Subir a Drive si hay internet y folder_id configurado
             folder_id = DRIVE_REPORTS_FOLDER_ID.strip()
             internet  = _has_internet()
 
@@ -652,7 +630,6 @@ class TabValidacion(QWidget):
             )
 
         except RuntimeError as e:
-            # El usuario cerro el dialogo sin elegir carpeta
             self._log(f"Reporte cancelado: {e}", "#f9e2af")
         except Exception as e:
             self._log(f"Error PDF: {e}", "#f38ba8")
