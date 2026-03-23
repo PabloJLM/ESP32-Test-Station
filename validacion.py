@@ -13,33 +13,44 @@ from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QFont, QPixmap, QImage
 
 
-# carpeta fija jsjs
+# ══════════════════════════════════════════════════════════════
+#  CONFIGURACION
+# ══════════════════════════════════════════════════════════════
+
+# ID de la carpeta principal de Drive donde se crean las subcarpetas
 DRIVE_REPORTS_FOLDER_ID = "15_j02jNBTtxrkIMCGkWUujgm4WTJABut"
 
-_reports_root = ""   
+# Las 7 categorias que se crean como subcarpetas en Drive y local
+CATEGORIAS = ["ESP32", "Robofut", "Todoterreno", "STEM SR", "STEM JR", "Drones", "IOT"]
+
+
+# ══════════════════════════════════════════════════════════════
+#  CARPETA LOCAL — variable de modulo, persiste mientras corre la app
+# ══════════════════════════════════════════════════════════════
+
+_reports_root = ""
 
 
 def _ask_reports_root(parent=None) -> str:
     # Abre el explorador para que el usuario elija la carpeta raiz
-    path = QFileDialog.getExistingDirectory(
+    return QFileDialog.getExistingDirectory(
         parent,
         "Selecciona la carpeta donde se guardaran los reportes PDF",
         os.path.expanduser("~"),
     )
-    return path
 
 
 def _get_reports_dir(categoria: str, parent=None) -> str:
+    # Devuelve <raiz>/<categoria>/ y la crea si no existe.
+    # Si ya existe la usa directamente sin preguntar.
     global _reports_root
-
     if not _reports_root:
         path = _ask_reports_root(parent)
         if not path:
             raise RuntimeError("No se selecciono una carpeta de destino.")
         _reports_root = path
-
     dest = os.path.join(_reports_root, categoria)
-    os.makedirs(dest, exist_ok=True)
+    os.makedirs(dest, exist_ok=True)   # exist_ok=True: no falla si ya existe
     return dest
 
 
@@ -51,8 +62,9 @@ def reset_reports_root():
 def get_current_reports_root() -> str:
     return _reports_root
 
-#ve si tiene internet sjjs
+
 def _has_internet(host="8.8.8.8", port=53, timeout=2) -> bool:
+    # Verifica conectividad con un ping simple
     try:
         socket.setdefaulttimeout(timeout)
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -63,13 +75,60 @@ def _has_internet(host="8.8.8.8", port=53, timeout=2) -> bool:
         return False
 
 
+# ══════════════════════════════════════════════════════════════
+#  CACHE DE IDs DE CARPETAS EN DRIVE
+#  Evita buscar/crear la misma carpeta en cada subida
+# ══════════════════════════════════════════════════════════════
+
+_drive_folder_cache: dict = {}   # {nombre_categoria: folder_id}
+
+
+def _get_or_create_drive_folder(service, nombre: str, parent_id: str) -> str:
+    # Busca la carpeta por nombre dentro del parent. Si no existe la crea.
+    # Usa cache en memoria para no hacer la busqueda mas de una vez por sesion.
+    if nombre in _drive_folder_cache:
+        return _drive_folder_cache[nombre]
+
+    # Buscar si ya existe
+    query = (
+        f"name='{nombre}' and "
+        f"'{parent_id}' in parents and "
+        f"mimeType='application/vnd.google-apps.folder' and "
+        f"trashed=false"
+    )
+    results = service.files().list(
+        q=query, fields="files(id, name)", spaces="drive"
+    ).execute()
+    files = results.get("files", [])
+
+    if files:
+        folder_id = files[0]["id"]
+    else:
+        # Crear carpeta
+        meta = {
+            "name":     nombre,
+            "mimeType": "application/vnd.google-apps.folder",
+            "parents":  [parent_id],
+        }
+        folder = service.files().create(body=meta, fields="id").execute()
+        folder_id = folder["id"]
+
+    _drive_folder_cache[nombre] = folder_id
+    return folder_id
+
+
+# ══════════════════════════════════════════════════════════════
+#  HILO SUBIDA A DRIVE
+# ══════════════════════════════════════════════════════════════
+
 class DriveUploadWorker(QThread):
     done = pyqtSignal(bool, str)
 
-    def __init__(self, local_path: str, folder_id: str):
+    def __init__(self, local_path: str, root_folder_id: str, categoria: str):
         super().__init__()
-        self.local_path = local_path
-        self.folder_id  = folder_id
+        self.local_path     = local_path
+        self.root_folder_id = root_folder_id
+        self.categoria      = categoria
 
     def run(self):
         try:
@@ -81,23 +140,38 @@ class DriveUploadWorker(QThread):
                 self.done.emit(False, "token.json no encontrado")
                 return
 
-            creds    = Credentials.from_authorized_user_file(
+            creds   = Credentials.from_authorized_user_file(
                 "token.json",
                 scopes=["https://www.googleapis.com/auth/drive.file"]
             )
-            service  = build("drive", "v3", credentials=creds)
+            service = build("drive", "v3", credentials=creds)
+
+            # Obtener o crear la subcarpeta de la categoria dentro de la raiz
+            cat_folder_id = _get_or_create_drive_folder(
+                service, self.categoria, self.root_folder_id
+            )
+
+            # Subir el PDF a la subcarpeta
             filename = os.path.basename(self.local_path)
-            meta     = {"name": filename, "parents": [self.folder_id]}
+            meta     = {"name": filename, "parents": [cat_folder_id]}
             media    = MediaFileUpload(self.local_path, mimetype="application/pdf")
             uploaded = service.files().create(
                 body=meta, media_body=media, fields="id,name"
             ).execute()
-            self.done.emit(True, f"Subido: {uploaded.get('name')} (id: {uploaded.get('id')})")
+            self.done.emit(
+                True,
+                f"Subido a Drive/{self.categoria}: {uploaded.get('name')}"
+            )
 
         except ImportError:
             self.done.emit(False, "Instalar: pip install google-api-python-client")
         except Exception as e:
             self.done.emit(False, str(e))
+
+
+# ══════════════════════════════════════════════════════════════
+#  HILO CAMARA
+# ══════════════════════════════════════════════════════════════
 
 class CameraThread(QThread):
     frame_ready = pyqtSignal(QImage)
@@ -150,6 +224,10 @@ class CameraThread(QThread):
         self.wait()
 
 
+# ══════════════════════════════════════════════════════════════
+#  HILO GOOGLE SHEETS
+# ══════════════════════════════════════════════════════════════
+
 class SheetsWorker(QThread):
     done = pyqtSignal(bool, str)
 
@@ -198,6 +276,10 @@ class SheetsWorker(QThread):
         except Exception as e:
             self.done.emit(False, str(e))
 
+
+# ══════════════════════════════════════════════════════════════
+#  GENERADOR DE REPORTE PDF
+# ══════════════════════════════════════════════════════════════
 
 def generar_reporte_pdf(data: dict, qr_pattern, logo_path: str = None,
                         output_dir: str = None) -> str:
@@ -316,6 +398,10 @@ def generar_reporte_pdf(data: dict, qr_pattern, logo_path: str = None,
     doc.build(story)
     return fpath
 
+
+# ══════════════════════════════════════════════════════════════
+#  PESTANA VALIDACION
+# ══════════════════════════════════════════════════════════════
 
 class TabValidacion(QWidget):
     status_msg = pyqtSignal(str)
@@ -592,10 +678,10 @@ class TabValidacion(QWidget):
             QMessageBox.warning(self, "Sin datos", "Primero valida un dispositivo.")
             return
         try:
-            # Resuelve la carpeta <raiz>/<categoria>/
             categoria = self.last_qr['sheet']
-            dest_dir  = _get_reports_dir(categoria, parent=self)
 
+            # Carpeta local <raiz>/<categoria>/ — la crea o reutiliza si existe
+            dest_dir = _get_reports_dir(categoria, parent=self)
             pdf_path = generar_reporte_pdf(
                 {**self.last_qr, 'encargado': self.encargado},
                 qr_pattern=self.qr_pattern,
@@ -605,22 +691,24 @@ class TabValidacion(QWidget):
             self._log(f"PDF guardado: {pdf_path}", "#a6e3a1")
             self.status_msg.emit(f"PDF guardado: {os.path.basename(pdf_path)}")
 
+            # Subir a Drive si hay internet
             folder_id = DRIVE_REPORTS_FOLDER_ID.strip()
             internet  = _has_internet()
 
             if not folder_id or folder_id.startswith("PEGAR"):
-                self._log("Drive: carpeta no configurada en validacion.py.", "#f9e2af")
+                self._log("Drive: carpeta no configurada.", "#f9e2af")
             elif not internet:
                 self._log("Drive: sin internet — solo guardado local.", "#f9e2af")
             else:
-                self._log("Drive: subiendo PDF...", "#89b4fa")
+                self._log(f"Drive: subiendo a subcarpeta '{categoria}'...", "#89b4fa")
                 self.status_msg.emit("Subiendo PDF a Drive...")
-                self._upload_worker = DriveUploadWorker(pdf_path, folder_id)
+                # Pasa la categoria para que el worker cree/use la subcarpeta correcta
+                self._upload_worker = DriveUploadWorker(pdf_path, folder_id, categoria)
                 self._upload_worker.done.connect(self._on_upload_done)
                 self._upload_worker.start()
 
             drive_msg = (
-                "Subiendo a Drive en segundo plano..."
+                f"Subiendo a Drive/{categoria} en segundo plano..."
                 if folder_id and not folder_id.startswith("PEGAR") and internet
                 else "Sin conexion o carpeta no configurada — solo copia local."
             )
