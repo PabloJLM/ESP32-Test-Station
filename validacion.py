@@ -13,21 +13,10 @@ from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QFont, QPixmap, QImage
 
 
-# ══════════════════════════════════════════════════════════════
-#  CONFIGURACION — editar aqui
-# ══════════════════════════════════════════════════════════════
+# carpeta fija jsjs
+DRIVE_REPORTS_FOLDER_ID = "15_j02jNBTtxrkIMCGkWUujgm4WTJABut"
 
-# ID de la carpeta de Google Drive donde se suben los reportes PDF
-DRIVE_REPORTS_FOLDER_ID = "1rs-_RKKVY2UtpfB7jw_xhfVQ355bM86m"
-
-
-# ══════════════════════════════════════════════════════════════
-#  CARPETA RAIZ DE REPORTES
-#  Se pide al usuario la primera vez que genera un reporte.
-#  Persiste en memoria mientras la app esta abierta.
-# ══════════════════════════════════════════════════════════════
-
-_reports_root = ""   # se llena la primera vez que se llama a _get_reports_dir()
+_reports_root = ""   
 
 
 def _ask_reports_root(parent=None) -> str:
