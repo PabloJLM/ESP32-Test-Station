@@ -6,13 +6,12 @@ from google.oauth2.credentials import Credentials
 import os
 
 # Config
-SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
+SCOPES = ['https://www.googleapis.com/auth/spreadsheets','https://www.googleapis.com/auth/drive.file',]
 
 def generar_token():
     """Genera un nuevo archivo token.json"""
     creds = None
     
-    # Verificar si ya existe token (en tu caso no existe)
     if os.path.exists('token.json'):
         creds = Credentials.from_authorized_user_file('token.json', SCOPES)
     

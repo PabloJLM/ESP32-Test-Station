@@ -78,7 +78,7 @@ class LoginScreen(QWidget):
                 )
                 lay.addWidget(lbl_logo)
 
-        title = QLabel("Tesla Lab")
+        title = QLabel("")
         title.setFont(QFont("Segoe UI", 20, QFont.Bold))
         title.setStyleSheet(f"color:{C_PEACH}; background:transparent; border:none;")
         title.setAlignment(Qt.AlignCenter)

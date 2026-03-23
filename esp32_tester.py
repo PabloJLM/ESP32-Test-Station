@@ -1,18 +1,3 @@
-#!/usr/bin/env python3
-"""
-Tesla Lab — ESP32 Tester
-========================
-Requiere: pip install pyserial PyQt5 opencv-python gspread reportlab pillow python-vlc
-
-Archivos:
-    esp32_tester.py   ← este archivo (main + config + tester serial)
-    login_manager.py  ← login general + auto-bloqueo
-    validacion.py     ← pestaña de validación QR + Sheets + PDF
-    tab_buscador.py   ← pestaña buscador
-    tab_dashboard.py  ← pestaña dashboard
-    tab_admin.py      ← pestaña admin
-"""
-
 import sys
 import os
 import re
@@ -36,9 +21,6 @@ from tab_dashboard  import TabDashboard
 from tab_admin      import TabAdmin
 
 
-# ══════════════════════════════════════════════════════════════
-#  CONFIGURACIÓN GLOBAL
-# ══════════════════════════════════════════════════════════════
 SHEET_ID   = '13WIYurPQvRztU1xpUru8-COzgfdPzqvTP4hEZM6pX2I'
 HEADER_ROW = 1
 COL_ESTADO    = 'A'
