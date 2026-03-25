@@ -180,10 +180,10 @@ class TabBle(QWidget):
         self._is_admin     = is_admin_fn or (lambda: False)
         self._bin_path     = _bin_ble if os.path.exists(_bin_ble) else ""
         self._flash_worker = None
-        self._serial_worker = None
         self._ser          = None
         self._queue        = []
         self._queue_idx    = 0
+        self._workers      = []   # mantiene refs vivas para evitar GC
         self._build_ui()
         self._refresh_ports()
 
@@ -427,6 +427,8 @@ class TabBle(QWidget):
         w = SerialWorker(self._ser, cmd, pin_id, value, timeout)
         w.result.connect(lambda ok, ack, c, v, n=nombre, d=desc, cm=cmd, vl=value:
                          self._on_result(ok, ack, c, v, n, d, cm, vl))
+        w.finished.connect(lambda: self._workers.remove(w) if w in self._workers else None)
+        self._workers.append(w)
         w.start()
 
     def _on_result(self, ok, ack, cmd, val, nombre, desc, orig_cmd, orig_val):
@@ -460,6 +462,8 @@ class TabBle(QWidget):
         w = SerialWorker(self._ser, cmd, pid, val, timeout)
         w.result.connect(lambda ok, ack, c, v, n=nombre, d=desc, cm=cmd, vl=val:
                          self._on_seq_result(ok, ack, c, v, n, d, cm, vl))
+        w.finished.connect(lambda: self._workers.remove(w) if w in self._workers else None)
+        self._workers.append(w)
         w.start()
 
     def _on_seq_result(self, ok, ack, cmd, val, nombre, desc, orig_cmd, orig_val):
@@ -505,6 +509,8 @@ class TabBle(QWidget):
 
     def cleanup(self):
         self._desconectar()
-        for w in (self._flash_worker, self._serial_worker):
-            if w and w.isRunning():
-                w.terminate(); w.wait()
+        for w in list(self._workers):
+            if w.isRunning(): w.terminate(); w.wait()
+        self._workers.clear()
+        if self._flash_worker and self._flash_worker.isRunning():
+            self._flash_worker.terminate(); self._flash_worker.wait()
