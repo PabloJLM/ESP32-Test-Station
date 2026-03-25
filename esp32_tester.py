@@ -17,6 +17,8 @@ from tab_dashboard import TabDashboard
 from tab_admin     import TabAdmin
 from tab_flasher   import TabFlasher
 from tab_tester    import TabTester
+from tab_wifi import TabWifi
+from tab_ble  import TabBle
 
 
 # ══════════════════════════════════════════════════════════════
@@ -267,8 +269,14 @@ class ESP32Tester(QMainWindow):
         self.tab_flasher = TabFlasher(
             is_admin_fn=lambda: self._session.nivel == "admin"
         )
+        self.tab_wifi = TabWifi(is_admin_fn=lambda: self._session.nivel == "admin"
+        )
+        self.tab_ble  = TabBle(is_admin_fn=lambda: self._session.nivel == "admin"
+        )
 
         self.tabs.addTab(self.tab_tester,     "Tester")          # 0
+        self.tabs.addTab(self.tab_wifi, "WiFi")   # 6
+        self.tabs.addTab(self.tab_ble,  "BLE")    # 7
         self.tabs.addTab(self.tab_validacion, "Validacion QR")   # 1
         self.tabs.addTab(self.tab_buscador,   "Buscador")        # 2
         self.tabs.addTab(self.tab_dashboard,  "Dashboard")       # 3
@@ -282,6 +290,8 @@ class ESP32Tester(QMainWindow):
         self.tab_dashboard.status_msg.connect(self.status_bar.showMessage)
         self.tab_admin.status_msg.connect(self.status_bar.showMessage)
         self.tab_flasher.status_msg.connect(self.status_bar.showMessage)
+        self.tab_wifi.status_msg.connect(self.status_bar.showMessage)
+        self.tab_ble.status_msg.connect(self.status_bar.showMessage)
 
         self.tabs.currentChanged.connect(self._on_tab_changed)
         return self.tabs
@@ -305,6 +315,8 @@ class ESP32Tester(QMainWindow):
             # Propagar usuario a las pestanas que lo necesitan
             self.tab_validacion.set_encargado(username)
             self.tab_flasher.notify_login()
+            self.tab_wifi.notify_login()
+            self.tab_ble.notify_login()
 
             self._main_stack.setCurrentIndex(1)
             self._set_tabs_locked(False)
@@ -325,7 +337,7 @@ class ESP32Tester(QMainWindow):
         for idx in LOCKED_TABS:
             self.tabs.setTabEnabled(idx, not locked)
         if locked:
-            self.tabs.setCurrentIndex(3)   # Dashboard siempre visible
+            self.tabs.setCurrentIndex(5)   # Dashboard siempre visible
 
     def _on_tab_changed(self, idx: int):
         if not self._session.logged_in and idx in LOCKED_TABS:
@@ -343,6 +355,8 @@ class ESP32Tester(QMainWindow):
         self.tab_dashboard.cleanup()
         self.tab_admin.cleanup()
         self.tab_flasher.cleanup()
+        self.tab_wifi.cleanup()
+        self.tab_ble.cleanup()
         event.accept()
 
 
