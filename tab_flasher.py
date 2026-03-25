@@ -62,8 +62,10 @@ class FlashWorker(QThread):
         self.baud     = baud
 
     def run(self):
+        import sys
+        # Usar el mismo Python de la app para garantizar que esptool este disponible
         cmd = [
-            "esptool.py",
+            sys.executable, "-m", "esptool",
             "--chip",  "esp32",
             "--port",  self.port,
             "--baud",  str(self.baud),
@@ -101,7 +103,7 @@ class FlashWorker(QThread):
         except FileNotFoundError:
             self.finished.emit(
                 False,
-                "esptool.py no encontrado.\nInstalar: pip install esptool"
+                "esptool no encontrado.\nVerificar: python -m esptool version\nInstalar: pip install esptool"
             )
         except Exception as e:
             self.finished.emit(False, str(e))
