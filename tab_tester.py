@@ -1205,7 +1205,7 @@ class TabTester(QWidget):
         # — Botón prueba completa —
         btn_row = QHBoxLayout()
         self._btn_full = QPushButton(
-            f"▶  Iniciar prueba completa  ({len(PRUEBA_COMPLETA)} pasos)")
+            f"Iniciar prueba completa  ({len(PRUEBA_COMPLETA)} pasos)")
         self._btn_full.setFixedHeight(40)
         self._btn_full.setStyleSheet(
             f"QPushButton {{ background:#2563eb; color:white; border:none;"

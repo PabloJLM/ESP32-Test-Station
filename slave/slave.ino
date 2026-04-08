@@ -8,7 +8,7 @@
 #include <Wire.h>
 #include "esp32-hal-ledc.h"
 
-// ── Pines placa Tesla Lab ────────────────────────────────────
+
 #define PIN_M1_PWM    15
 #define PIN_M1_AIN1    5
 #define PIN_M1_AIN2   18
@@ -45,7 +45,7 @@
 #define ACK_OK   0xAA
 #define ACK_ERR  0xEE
 
-Adafruit_NeoPixel pixel(1, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel pixel(16, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ800);//se añaden los 16 xd
 
 void processCommand(uint8_t cmd, uint8_t pinId, uint8_t value);
 int  pinIdToGpio(uint8_t pinId);
@@ -138,11 +138,11 @@ void processCommand(uint8_t cmd, uint8_t pinId, uint8_t value) {
 
         case CMD_NEOPIXEL: {
             switch (value) {
-                case 0x00: pixel.setPixelColor(0,   0,   0,   0); break;
-                case 0x01: pixel.setPixelColor(0, 255,   0,   0); break;
-                case 0x02: pixel.setPixelColor(0,   0, 255,   0); break;
-                case 0x03: pixel.setPixelColor(0,   0,   0, 255); break;
-                case 0xFF: pixel.setPixelColor(0, 255, 255, 255); break;
+                case 0x00: pixel.fill(pixel.Color(0, 0, 0), 0, 16); break;
+                case 0x01: pixel.fill(pixel.Color(255, 0, 0), 0, 16); break;
+                case 0x02: pixel.fill(pixel.Color(0, 255, 0), 0, 16); break;
+                case 0x03: pixel.fill(pixel.Color(0, 0, 255), 0, 16); break;
+                case 0xFF: pixel.fill(pixel.Color(255, 255, 255), 0, 16); break;
                 default:   sendResponse(ACK_ERR, cmd, 0x00); return;
             }
             pixel.show();
