@@ -1,31 +1,33 @@
 // ═══════════════════════════════════════════════════════════
 //  SLAVE BLE TEST — Tesla Lab BALAM 2026
-//  Firmware minimo para prueba de conectividad BLE.
-//  No incluye perifericos — esos se prueban con slave.ino.
+//  Protocolo: [CMD, 0x00, 0x00] → [ACK, CMD, VAL]
 //
-//  0x22 BLE_ADV   — value=1 inicia advertising, value=0 detiene
-//  0x23 BLE_SCAN  — escanea y devuelve cantidad de dispositivos
-//  0xF0 PING      — alive check
-//  0xFF RESET
+//  0x20  BLE_SCAN  — escanea 5s, VAL = cantidad de dispositivos
+//  0x21  BLE_ADV   — inicia advertising como "TeslaLab-ESP32"
+//  0x22  BLE_STOP  — detiene advertising
+//  0xF0  PING      — alive check
+//  0xFF  RESET
 // ═══════════════════════════════════════════════════════════
 
 #include <BLEDevice.h>
 #include <BLEScan.h>
 #include <BLEAdvertising.h>
 
-#define BLE_DEVICE_NAME  "TeslaLab-ESP32"
-#define BLE_SCAN_SECS    3
+#define DEVICE_NAME  "TeslaLab-ESP32"
+#define SCAN_SECS    5
 
 #define CMD_PING     0xF0
 #define CMD_RESET    0xFF
-#define CMD_BLE_ADV  0x22
-#define CMD_BLE_SCAN 0x23
+#define CMD_BLE_SCAN 0x20
+#define CMD_BLE_ADV  0x21
+#define CMD_BLE_STOP 0x22
 
 #define ACK_OK  0xAA
 #define ACK_ERR 0xEE
 
 BLEScan*        pScan = nullptr;
 BLEAdvertising* pAdv  = nullptr;
+bool            advOn = false;
 
 void sendResponse(uint8_t ack, uint8_t cmd, uint8_t val) {
     uint8_t buf[3] = {ack, cmd, val};
@@ -34,9 +36,9 @@ void sendResponse(uint8_t ack, uint8_t cmd, uint8_t val) {
 
 void setup() {
     Serial.begin(9600);
-    // Libera RAM de BT Classic — no la necesitamos
+    // Libera RAM de BT Classic — no se usa
     esp_bt_controller_mem_release(ESP_BT_MODE_CLASSIC_BT);
-    BLEDevice::init(BLE_DEVICE_NAME);
+    BLEDevice::init(DEVICE_NAME);
     sendResponse(ACK_OK, CMD_PING, 0x00);
 }
 
@@ -58,29 +60,45 @@ void loop() {
             ESP.restart();
             break;
 
-        case CMD_BLE_ADV: {
-            if (!pAdv) {
-                pAdv = BLEDevice::getAdvertising();
-                // Device Information Service — visible en cualquier scanner BLE
-                pAdv->addServiceUUID("0000180A-0000-1000-8000-00805F9B34FB");
-                pAdv->setScanResponse(true);
-            }
-            value == 1 ? pAdv->start() : pAdv->stop();
-            sendResponse(ACK_OK, CMD_BLE_ADV, value);
-            break;
-        }
-
         case CMD_BLE_SCAN: {
+            // Si estaba advertiseando, detener antes de escanear
+            if (advOn && pAdv) { pAdv->stop(); advOn = false; }
+
             if (!pScan) {
                 pScan = BLEDevice::getScan();
                 pScan->setActiveScan(false);
-                pScan->setInterval(150);
-                pScan->setWindow(100);
+                pScan->setInterval(100);
+                pScan->setWindow(80);
             }
-            BLEScanResults* r = pScan->start(BLE_SCAN_SECS, false);
-            uint8_t n = r ? (uint8_t)min(r->getCount(), 254) : 0;
+            BLEScanResults* results = pScan->start(SCAN_SECS, false);
+            uint8_t count = results ? (uint8_t)min(results->getCount(), 254) : 0;
             pScan->clearResults();
-            sendResponse(ACK_OK, CMD_BLE_SCAN, n);
+            sendResponse(ACK_OK, CMD_BLE_SCAN, count);
+            break;
+        }
+
+        case CMD_BLE_ADV: {
+            if (!pAdv) {
+                pAdv = BLEDevice::getAdvertising();
+                // Generic Access service — visible en cualquier scanner BLE
+                pAdv->addServiceUUID("0000180A-0000-1000-8000-00805F9B34FB");
+                pAdv->setScanResponse(true);
+                pAdv->setMinPreferred(0x06);
+            }
+            if (!advOn) {
+                pAdv->start();
+                advOn = true;
+            }
+            sendResponse(ACK_OK, CMD_BLE_ADV, 1);
+            break;
+        }
+
+        case CMD_BLE_STOP: {
+            if (pAdv && advOn) {
+                pAdv->stop();
+                advOn = false;
+            }
+            sendResponse(ACK_OK, CMD_BLE_STOP, 0);
             break;
         }
 

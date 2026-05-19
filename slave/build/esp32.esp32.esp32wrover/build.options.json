@@ -1,0 +1,10 @@
+{
+  "additionalFiles": "",
+  "builtInLibrariesFolders": "C:\\Users\\pablo\\AppData\\Local\\Arduino15\\libraries",
+  "compiler.optimization_flags": "-Os",
+  "customBuildProperties": "",
+  "fqbn": "esp32:esp32:esp32wrover:UploadSpeed=921600,FlashFreq=80,FlashMode=qio,PartitionScheme=default,DebugLevel=none,EraseFlash=none",
+  "hardwareFolders": "c:\\Users\\pablo\\AppData\\Local\\Arduino15\\packages",
+  "otherLibrariesFolders": "c:\\Users\\pablo\\OneDrive\\Documentos\\Arduino\\libraries",
+  "sketchLocation": "C:\\Users\\pablo\\OneDrive\\Desktop\\Tesla\\Test_Station\\slave"
+}
