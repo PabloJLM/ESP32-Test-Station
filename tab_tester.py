@@ -371,7 +371,7 @@ class TabTester(QWidget):
         return card
 
     def _motor_cmd(self, m, direction):
-        D_LBL = {0:"STOP",1:"ADELANTE >",2:"< ATRAS"}
+        D_LBL = {0:"STOP",1:"ADELANTE",2:"ATRAS"}
         D_COL = {0:C_SUB,1:C_GREEN,2:C_RED}
         self._m_dir[m] = direction
         self._m_status[m].setText(D_LBL[direction])
@@ -394,7 +394,8 @@ class TabTester(QWidget):
                               C_GREEN if ok else C_RED))
 
     def _stop_all(self):
-        for m in (1,2): self._motor_cmd(m,0)
+        # motores se paran en el paso correspondiente del test
+        pass
 
     # ── Servo IO18 + Digitales IO13/IO15 ─────────────────────
     def _build_servos(self):
@@ -561,7 +562,7 @@ class TabTester(QWidget):
         self._queue = list(FULL_TEST); self._q_idx = 0; self._running = True
         self._table.clear(); self._badge.hide()
         if self._neo_strip: self._neo_strip.reset()
-        for m in (1,2): self._motor_cmd(m,0)
+        # motores se paran en el paso correspondiente del test
         self._btn_full.setEnabled(False)
         self.status_msg.emit("Prueba completa iniciada...")
         self._log(f"=== Prueba completa: {len(FULL_TEST)} pasos ===", C_BLUE)
@@ -585,7 +586,7 @@ class TabTester(QWidget):
             rgb = NEO_PAL.get(orig_val,(30,30,30))
             self._neo_strip.fill(rgb if orig_val != 0 else (30,30,30))
         elif orig_cmd == CMD_MOTOR and ok:
-            D_LBL={0:"STOP",1:"ADELANTE >",2:"< ATRAS"}
+            D_LBL={0:"STOP",1:"ADELANTE",2:"ATRAS"}
             D_COL={0:C_SUB,1:C_GREEN,2:C_RED}
             self._m_status[pid].setText(D_LBL.get(orig_val,"STOP"))
             self._m_status[pid].setStyleSheet(
@@ -617,7 +618,7 @@ class TabTester(QWidget):
             v_str = "OK" if ok else "ERR"
 
         self._table.add(nombre, v_str, ok)
-        self._log(f"  <- {'PASS' if ok else 'FAIL'}", C_GREEN if ok else C_RED)
+        self._log(f"  RX: {'PASS' if ok else 'FAIL'}", C_GREEN if ok else C_RED)
         self._q_idx += 1
         QTimer.singleShot(delay, self._run_next)
 
@@ -745,9 +746,10 @@ class TabTester(QWidget):
     def _log(self, msg, color=None):
         color = color or C_TEXT
         ts = datetime.now().strftime("%H:%M:%S")
+        safe = msg.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         self._log_w.append(
             f'<span style="color:{C_SUB}">[{ts}]</span> '
-            f'<span style="color:{color}">{msg}</span>')
+            f'<span style="color:{color}">{safe}</span>')
         self._log_w.moveCursor(QTextCursor.End)
 
     # ── Style ────────────────────────────────────────────────
