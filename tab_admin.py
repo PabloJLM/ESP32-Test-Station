@@ -34,8 +34,8 @@ USERS = {
     "admin4": "balam2026",
 }
 
-EASTER_USER = "".join([chr(x) for x in [74, 111, 74, 111, 80, 74]])
-EASTER_PASS = "".join([chr(x) for x in [89, 97, 110, 105, 114, 97]])
+EASTER_USER = "".join([chr(x) for x in [74, 111, 74, 111, 80]])
+EASTER_PASS = "".join([chr(x) for x in [82, 101, 122, 101]])
 
 C_BASE    = "#1e1e2e"
 C_MANTLE  = "#181825"

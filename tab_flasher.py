@@ -172,8 +172,8 @@ class TabFlasher(QWidget):
         self._btn_bin_maestro.clicked.connect(lambda: self._elegir_bin("maestro"))
         grid.addWidget(self._btn_bin_maestro, 0, 2)
 
-        # Slave
-        grid.addWidget(self._lbl("Slave:"), 1, 0)
+        # Slave Principal
+        grid.addWidget(self._lbl("Slave Principal:"), 1, 0)
         self._lbl_slave = QLabel("Sin seleccionar")
         self._lbl_slave.setStyleSheet(
             f"color:{self.C_YELLOW}; font-size:11px; font-family:Consolas;"

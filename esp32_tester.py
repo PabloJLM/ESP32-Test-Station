@@ -17,8 +17,7 @@ from tab_dashboard import TabDashboard
 from tab_admin     import TabAdmin
 from tab_flasher   import TabFlasher
 from tab_tester    import TabTester
-from tab_wifi import TabWifi
-from tab_ble  import TabBle
+from tab_connectivity import TabConnectivity
 
 
 # ══════════════════════════════════════════════════════════════
@@ -48,8 +47,8 @@ QR_PATTERN = re.compile(
     re.IGNORECASE
 )
 
-# Pestanas bloqueadas sin login
-LOCKED_TABS = {0, 1, 2}   # Tester, Validacion QR, Buscador
+# Pestanas bloqueadas sin login: Tester, Conectividad, Validacion QR
+LOCKED_TABS = {0, 1, 2}
 
 
 # ══════════════════════════════════════════════════════════════
@@ -269,29 +268,26 @@ class ESP32Tester(QMainWindow):
         self.tab_flasher = TabFlasher(
             is_admin_fn=lambda: self._session.nivel == "admin"
         )
-        self.tab_wifi = TabWifi(is_admin_fn=lambda: self._session.nivel == "admin"
-        )
-        self.tab_ble  = TabBle(is_admin_fn=lambda: self._session.nivel == "admin"
+        self.tab_connectivity = TabConnectivity(
+            is_admin_fn=lambda: self._session.nivel == "admin"
         )
 
-        self.tabs.addTab(self.tab_tester,     "Tester")          # 0
-        self.tabs.addTab(self.tab_wifi, "WiFi")   # 6
-        self.tabs.addTab(self.tab_ble,  "BLE")    # 7
-        self.tabs.addTab(self.tab_validacion, "Validacion QR")   # 1
-        self.tabs.addTab(self.tab_buscador,   "Buscador")        # 2
-        self.tabs.addTab(self.tab_dashboard,  "Dashboard")       # 3
-        self.tabs.addTab(self.tab_admin,      "Admin")           # 4
-        self.tabs.addTab(self.tab_flasher,    "Flasher")         # 5
+        self.tabs.addTab(self.tab_tester,        "Tester")         # 0
+        self.tabs.addTab(self.tab_connectivity,  "Conectividad")   # 1
+        self.tabs.addTab(self.tab_validacion,    "Validacion QR")  # 2
+        self.tabs.addTab(self.tab_buscador,      "Buscador")       # 3
+        self.tabs.addTab(self.tab_dashboard,     "Dashboard")      # 4
+        self.tabs.addTab(self.tab_admin,         "Admin")          # 5
+        self.tabs.addTab(self.tab_flasher,       "Flasher")        # 6
 
         # Conectar status bar
         self.tab_tester.status_msg.connect(self.status_bar.showMessage)
+        self.tab_connectivity.status_msg.connect(self.status_bar.showMessage)
         self.tab_validacion.status_msg.connect(self.status_bar.showMessage)
         self.tab_buscador.status_msg.connect(self.status_bar.showMessage)
         self.tab_dashboard.status_msg.connect(self.status_bar.showMessage)
         self.tab_admin.status_msg.connect(self.status_bar.showMessage)
         self.tab_flasher.status_msg.connect(self.status_bar.showMessage)
-        self.tab_wifi.status_msg.connect(self.status_bar.showMessage)
-        self.tab_ble.status_msg.connect(self.status_bar.showMessage)
 
         self.tabs.currentChanged.connect(self._on_tab_changed)
         return self.tabs
@@ -315,8 +311,7 @@ class ESP32Tester(QMainWindow):
             # Propagar usuario a las pestanas que lo necesitan
             self.tab_validacion.set_encargado(username)
             self.tab_flasher.notify_login()
-            self.tab_wifi.notify_login()
-            self.tab_ble.notify_login()
+            self.tab_connectivity.notify_login()
 
             self._main_stack.setCurrentIndex(1)
             self._set_tabs_locked(False)
@@ -337,7 +332,7 @@ class ESP32Tester(QMainWindow):
         for idx in LOCKED_TABS:
             self.tabs.setTabEnabled(idx, not locked)
         if locked:
-            self.tabs.setCurrentIndex(5)   # Dashboard siempre visible
+            self.tabs.setCurrentIndex(4)   # Dashboard siempre visible
 
     def _on_tab_changed(self, idx: int):
         if not self._session.logged_in and idx in LOCKED_TABS:
@@ -350,13 +345,12 @@ class ESP32Tester(QMainWindow):
 
     def closeEvent(self, event):
         self.tab_tester.cleanup()
+        self.tab_connectivity.cleanup()
         self.tab_validacion.cleanup()
         self.tab_buscador.cleanup()
         self.tab_dashboard.cleanup()
         self.tab_admin.cleanup()
         self.tab_flasher.cleanup()
-        self.tab_wifi.cleanup()
-        self.tab_ble.cleanup()
         event.accept()
 
 
