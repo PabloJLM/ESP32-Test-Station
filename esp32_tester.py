@@ -363,5 +363,7 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     window = ESP32Tester()
-    window.show()
+    #window.showFullScreen()
+    window.showMaximized()
+    #window.show()
     sys.exit(app.exec_())

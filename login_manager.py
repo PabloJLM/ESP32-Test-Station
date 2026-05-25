@@ -1,20 +1,21 @@
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QLineEdit, QPushButton, QFrame, QApplication,
+    QSizePolicy,
 )
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QEvent
 from PyQt5.QtGui import QFont, QPixmap
 
 APP_USERS = {
     # voluntarios/operadores jsjs
-    "encargado1": ("balam2026", "encargado"),
+    "voluntarios": ("balam2026", "encargado"),
     "encargado2": ("balam2026", "encargado"),
     "encargado3": ("balam2026", "encargado"),
     # Admins
-    "admin1":     ("balam2026", "admin"),
-    "admin2":     ("balam2026", "admin"),
-    "admin3":     ("balam2026", "admin"),
-    "admin4":     ("balam2026", "admin"),
+    "admin1":     ("1012", "admin"),
+    "admin2":     ("1012", "admin"),
+    "admin3":     ("1012", "admin"),
+    "admin4":     ("1012", "admin"),
 }
 
 # Minutos de inactividad antes de bloquear
@@ -72,9 +73,13 @@ class LoginScreen(QWidget):
                 lbl_logo = QLabel()
                 lbl_logo.setAlignment(Qt.AlignCenter)
                 lbl_logo.setStyleSheet("background:transparent; border:none;")
-                lbl_logo.setPixmap(
-                    QPixmap(self.logo_path).scaledToHeight(54, Qt.SmoothTransformation)
-                )
+                lbl_logo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+                pixmap = QPixmap(self.logo_path)
+                if not pixmap.isNull():
+                    pixmap = pixmap.scaledToWidth(
+                        280, Qt.SmoothTransformation
+                    )
+                    lbl_logo.setPixmap(pixmap)
                 lay.addWidget(lbl_logo)
 
         title = QLabel("")
