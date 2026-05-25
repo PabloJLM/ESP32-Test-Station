@@ -2,10 +2,8 @@
 tab_connectivity.py — Tesla Lab BALAM 2026
 WiFi + BLE en un solo tab.
 
-Protocolo: [CMD, 0x00, 0x00] → [ACK, CMD, VAL]
-
-WiFi:  0x10 Scan | 0x11 AP | 0x12 Connect STA | 0x13 Ping | 0x14 Disc
-BLE:   0x20 Scan | 0x21 Advertise | 0x22 Stop
+Firmware fijo: slave_connectivity/build/esp32.esp32.esp32wrover/slave_connectivity.ino.bin
+Admin puede override con cualquier .bin.
 """
 
 import os, re, sys, subprocess, serial, serial.tools.list_ports
@@ -28,12 +26,20 @@ C_YELLOW  = "#f9e2af";  C_MAUVE   = "#cba6f7";  C_TEAL    = "#94e2d5"
 
 ACK_OK  = 0xAA;  ACK_ERR = 0xEE
 
+_BASE = os.path.dirname(os.path.abspath(__file__))
+_BUILTIN_BIN = os.path.join(
+    _BASE,
+    "slave_connectivity", "build",
+    "esp32.esp32.esp32wrover",
+    "slave_connectivity.ino.bin"
+)
+
 WIFI_TESTS = [
     (0x10, "WiFi Scan",    "Redes visibles",           8.0,  "WiFi"),
     (0x11, "Crear AP",     "AP 'TeslaLab-Test'",       6.0,  "WiFi"),
     (0x14, "Apagar AP",    "Detiene AP",                4.0,  "WiFi"),
-    (0x12, "Conectar STA", "Red 'galileo'",            12.0, "WiFi"),
-    (0x13, "Ping Google",  "Ping 8.8.8.8 (RTT ms)",    8.0,  "WiFi"),
+    (0x12, "Conectar STA", "Red 'Balam_Test'",         12.0, "WiFi"),
+    (0x13, "Ping Router",  "Ping gateway (RTT ms)",     8.0,  "WiFi"),
     (0x14, "Desconectar",  "Apaga WiFi",                4.0,  "WiFi"),
 ]
 BLE_TESTS = [
@@ -43,11 +49,7 @@ BLE_TESTS = [
 ]
 ALL_TESTS = WIFI_TESTS + BLE_TESTS
 
-_default_bin = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                             "firmware", "slave_connectivity.bin")
 
-
-# ── Flash worker ────────────────────────────────────────────
 class FlashWorker(QThread):
     output   = pyqtSignal(str)
     progress = pyqtSignal(int)
@@ -79,7 +81,6 @@ class FlashWorker(QThread):
             self.finished.emit(False, str(e))
 
 
-# ── Serial worker ────────────────────────────────────────────
 class SerialWorker(QThread):
     result = pyqtSignal(bool, int, int, int)
 
@@ -105,7 +106,6 @@ class SerialWorker(QThread):
             self.result.emit(False, ACK_ERR, self.cmd, 0)
 
 
-# ── Result table ─────────────────────────────────────────────
 class ResultTable(QTableWidget):
     COLS = ["Tipo", "Prueba", "Descripcion", "Valor", "Resultado"]
 
@@ -155,35 +155,30 @@ class ResultTable(QTableWidget):
         self.setRowCount(0)
 
 
-# ── Tab Conectividad ─────────────────────────────────────────
 class TabConnectivity(QWidget):
     status_msg = pyqtSignal(str)
 
     def __init__(self, is_admin_fn=None):
         super().__init__()
-        self._is_admin     = is_admin_fn or (lambda: False)
-        self._bin_path     = _default_bin if os.path.exists(_default_bin) else ""
-        self._flash_worker = None
-        self._ser          = None
-        self._queue        = []
-        self._queue_idx    = 0
-        self._workers      = []
+        self._is_admin        = is_admin_fn or (lambda: False)
+        self._flash_worker    = None
+        self._ser             = None
+        self._queue           = []
+        self._queue_idx       = 0
+        self._workers         = []
+        self._bin_path        = _BUILTIN_BIN if os.path.exists(_BUILTIN_BIN) else ""
+        self._bin_is_override = False
         self._build_ui()
         self._refresh_ports()
 
     def notify_login(self):
         self._refresh_bin_label()
 
-    # ── UI ───────────────────────────────────────────────────
     def _build_ui(self):
         root = QVBoxLayout(self)
         root.setSpacing(8)
         root.setContentsMargins(12, 12, 12, 12)
-
-        # Row 1: firmware + flash
         root.addLayout(self._build_top_bar())
-
-        # Progress bar
         self._progress = QProgressBar()
         self._progress.setRange(0, 100); self._progress.setValue(0)
         self._progress.setFixedHeight(10); self._progress.setTextVisible(False)
@@ -191,39 +186,35 @@ class TabConnectivity(QWidget):
             f"QProgressBar{{background:{C_OVERLAY};border-radius:3px;border:none;}}"
             f"QProgressBar::chunk{{background:{C_BLUE};border-radius:3px;}}")
         root.addWidget(self._progress)
-
-        # Row 2: serial connection
         root.addWidget(self._build_conn_bar())
-
-        # Row 3: tests + results
         splitter = QSplitter(Qt.Horizontal)
         splitter.addWidget(self._build_tests_panel())
         splitter.addWidget(self._build_results_panel())
         splitter.setSizes([300, 600])
         root.addWidget(splitter, 1)
-
-        # Row 4: log
         root.addWidget(self._build_log())
 
     def _build_top_bar(self):
         lay = QHBoxLayout(); lay.setSpacing(10)
-
-        # Firmware
         bin_box = QGroupBox("Firmware Conectividad")
         bin_box.setStyleSheet(self._gs(C_BLUE))
         bl = QHBoxLayout(bin_box); bl.setSpacing(8)
-        self._lbl_bin = QLabel("Sin seleccionar")
-        self._lbl_bin.setStyleSheet(f"color:{C_YELLOW};font-size:11px;font-family:Consolas;")
+        self._lbl_bin = QLabel()
         self._lbl_bin.setWordWrap(True)
         bl.addWidget(self._lbl_bin, 1)
-        self._btn_bin = QPushButton("Elegir .bin")
-        self._btn_bin.setFixedWidth(95)
+        self._btn_bin = QPushButton("Override .bin")
+        self._btn_bin.setFixedWidth(110)
+        self._btn_bin.setToolTip("Solo admin — reemplaza el firmware builtin para esta sesion")
         self._btn_bin.setStyleSheet(self._bs())
         self._btn_bin.clicked.connect(self._elegir_bin)
+        self._btn_bin_reset = QPushButton("Restaurar")
+        self._btn_bin_reset.setFixedWidth(90)
+        self._btn_bin_reset.setToolTip("Volver al firmware builtin")
+        self._btn_bin_reset.setStyleSheet(self._bs())
+        self._btn_bin_reset.clicked.connect(self._reset_bin)
         bl.addWidget(self._btn_bin)
+        bl.addWidget(self._btn_bin_reset)
         lay.addWidget(bin_box, 3)
-
-        # Puerto + flash
         port_box = QGroupBox("Puerto + Flash")
         port_box.setStyleSheet(self._gs(C_BLUE))
         pl = QHBoxLayout(port_box); pl.setSpacing(6)
@@ -244,10 +235,11 @@ class TabConnectivity(QWidget):
         pl.addWidget(btn_ref)
         pl.addWidget(self._btn_flash)
         lay.addWidget(port_box, 2)
+        self._refresh_bin_label()
         return lay
 
     def _build_conn_bar(self):
-        box = QGroupBox("Conexión Serial")
+        box = QGroupBox("Conexion Serial")
         box.setStyleSheet(self._gs(C_TEAL))
         lay = QHBoxLayout(box); lay.setSpacing(8)
         lay.addWidget(QLabel("Puerto:"))
@@ -261,16 +253,14 @@ class TabConnectivity(QWidget):
         self._btn_conn.setFixedWidth(100)
         self._btn_conn.setStyleSheet(self._bs())
         self._btn_conn.clicked.connect(self._toggle_conn)
-        self._lbl_conn = QLabel("● Desconectado")
+        self._lbl_conn = QLabel("  Desconectado")
         self._lbl_conn.setStyleSheet(f"color:{C_RED};font-weight:700;")
         lay.addWidget(self._combo_port)
         lay.addWidget(btn_ref)
         lay.addWidget(self._btn_conn)
         lay.addWidget(self._lbl_conn)
         lay.addStretch()
-
-        # Prueba completa a la derecha
-        self._btn_all = QPushButton("▶  Prueba Completa  (WiFi + BLE)")
+        self._btn_all = QPushButton("Prueba Completa  (WiFi + BLE)")
         self._btn_all.setFixedHeight(36)
         self._btn_all.setStyleSheet(
             f"QPushButton{{background:#2563eb;color:white;border:none;"
@@ -284,30 +274,24 @@ class TabConnectivity(QWidget):
     def _build_tests_panel(self):
         w = QWidget()
         lay = QVBoxLayout(w); lay.setContentsMargins(0, 0, 0, 0); lay.setSpacing(8)
-
-        # WiFi
         wifi_box = QGroupBox("WiFi")
         wifi_box.setStyleSheet(self._gs(C_TEAL))
         wl = QVBoxLayout(wifi_box); wl.setSpacing(4)
         for cmd, nombre, desc, timeout, tipo in WIFI_TESTS:
             btn = QPushButton(nombre)
-            btn.setFixedHeight(30)
-            btn.setToolTip(desc)
+            btn.setFixedHeight(30); btn.setToolTip(desc)
             btn.setStyleSheet(self._bs_teal())
             btn.clicked.connect(
                 lambda _, c=cmd, n=nombre, d=desc, t=timeout, tp=tipo:
                 self._prueba_single(c, n, d, t, tp))
             wl.addWidget(btn)
         lay.addWidget(wifi_box)
-
-        # BLE
         ble_box = QGroupBox("BLE")
         ble_box.setStyleSheet(self._gs(C_MAUVE))
         bl = QVBoxLayout(ble_box); bl.setSpacing(4)
         for cmd, nombre, desc, timeout, tipo in BLE_TESTS:
             btn = QPushButton(nombre)
-            btn.setFixedHeight(30)
-            btn.setToolTip(desc)
+            btn.setFixedHeight(30); btn.setToolTip(desc)
             btn.setStyleSheet(self._bs_mauve())
             btn.clicked.connect(
                 lambda _, c=cmd, n=nombre, d=desc, t=timeout, tp=tipo:
@@ -324,10 +308,8 @@ class TabConnectivity(QWidget):
         hdr = QHBoxLayout()
         self._lbl_progress = QLabel("")
         self._lbl_progress.setStyleSheet(f"color:{C_SUBTEXT};font-size:11px;")
-        hdr.addWidget(self._lbl_progress)
-        hdr.addStretch()
-        btn_cl = QPushButton("Limpiar")
-        btn_cl.setFixedWidth(70)
+        hdr.addWidget(self._lbl_progress); hdr.addStretch()
+        btn_cl = QPushButton("Limpiar"); btn_cl.setFixedWidth(70)
         btn_cl.setStyleSheet(self._bs())
         btn_cl.clicked.connect(self._limpiar_resultados)
         hdr.addWidget(btn_cl)
@@ -346,10 +328,8 @@ class TabConnectivity(QWidget):
         box = QGroupBox("Log")
         box.setStyleSheet(self._gs(C_BLUE))
         lay = QVBoxLayout(box); lay.setSpacing(4)
-        hdr = QHBoxLayout()
-        hdr.addStretch()
-        btn_cl = QPushButton("Limpiar")
-        btn_cl.setFixedWidth(70)
+        hdr = QHBoxLayout(); hdr.addStretch()
+        btn_cl = QPushButton("Limpiar"); btn_cl.setFixedWidth(70)
         btn_cl.setStyleSheet(self._bs())
         btn_cl.clicked.connect(lambda: self._log.clear())
         hdr.addWidget(btn_cl)
@@ -364,7 +344,6 @@ class TabConnectivity(QWidget):
         lay.addWidget(self._log)
         return box
 
-    # ── Ports ────────────────────────────────────────────────
     def _refresh_ports(self):
         ports = [p.device for p in serial.tools.list_ports.comports()]
         items = ports if ports else ["(sin puertos)"]
@@ -372,42 +351,69 @@ class TabConnectivity(QWidget):
             combo.clear()
             combo.addItems(items)
 
-    # ── Bin ──────────────────────────────────────────────────
     def _refresh_bin_label(self):
-        self._btn_bin.setEnabled(self._is_admin())
-        if self._bin_path and os.path.exists(self._bin_path):
-            self._lbl_bin.setText(os.path.basename(self._bin_path) + "  ✓")
-            self._lbl_bin.setStyleSheet(f"color:{C_GREEN};font-size:11px;font-family:Consolas;")
+        admin = self._is_admin()
+        self._btn_bin.setEnabled(admin)
+        self._btn_bin_reset.setEnabled(admin and self._bin_is_override)
+        exists = bool(self._bin_path) and os.path.exists(self._bin_path)
+        if not self._bin_path:
+            self._lbl_bin.setText(
+                "slave_connectivity.ino.bin  NO ENCONTRADO\n"
+                f"Esperado: slave_connectivity{os.sep}build{os.sep}"
+                f"esp32.esp32.esp32wrover{os.sep}slave_connectivity.ino.bin"
+            )
+            self._lbl_bin.setStyleSheet(f"color:{C_RED};font-size:11px;font-family:Consolas;")
+        elif self._bin_is_override:
+            name = os.path.basename(self._bin_path)
+            color = C_GREEN if exists else C_RED
+            suffix = "  [override]" if exists else "  (no encontrado)"
+            self._lbl_bin.setText(name + suffix)
+            self._lbl_bin.setStyleSheet(f"color:{color};font-size:11px;font-family:Consolas;")
         else:
-            self._lbl_bin.setText("Sin seleccionar" if not self._bin_path
-                                   else os.path.basename(self._bin_path) + "  (no encontrado)")
-            self._lbl_bin.setStyleSheet(f"color:{C_YELLOW};font-size:11px;font-family:Consolas;")
+            color = C_GREEN if exists else C_RED
+            suffix = "  [builtin]" if exists else "  NO ENCONTRADO"
+            self._lbl_bin.setText("slave_connectivity.ino.bin" + suffix)
+            self._lbl_bin.setStyleSheet(f"color:{color};font-size:11px;font-family:Consolas;")
 
     def _elegir_bin(self):
         if not self._is_admin():
             QMessageBox.warning(self, "Sin permiso", "Solo admin puede cambiar firmware.")
             return
         path, _ = QFileDialog.getOpenFileName(
-            self, "Firmware Conectividad (.bin)", os.path.expanduser("~"), "Firmware (*.bin)")
+            self, "Override Firmware (.bin)", os.path.expanduser("~"), "Firmware (*.bin)")
         if path:
             self._bin_path = path
+            self._bin_is_override = True
             self._refresh_bin_label()
-            self._log_line(f"Firmware: {path}", C_GREEN)
+            self._log_line(f"Override firmware: {path}", C_YELLOW)
 
-    # ── Flash ────────────────────────────────────────────────
+    def _reset_bin(self):
+        self._bin_path = _BUILTIN_BIN if os.path.exists(_BUILTIN_BIN) else ""
+        self._bin_is_override = False
+        self._refresh_bin_label()
+        self._log_line("Firmware restaurado al builtin.", C_GREEN)
+
     def _flashear(self):
         if not self._bin_path or not os.path.exists(self._bin_path):
-            QMessageBox.warning(self, "Sin firmware", "Elige un .bin primero."); return
+            QMessageBox.warning(self, "Sin firmware",
+                "slave_connectivity.ino.bin no encontrado.\n\n"
+                "Compila el sketch en Arduino IDE. Debe existir:\n"
+                "slave_connectivity/build/esp32.esp32.esp32wrover/"
+                "slave_connectivity.ino.bin")
+            return
         port = self._combo_port_flash.currentText()
         if not port or port == "(sin puertos)":
-            QMessageBox.warning(self, "Sin puerto", "Selecciona un puerto COM."); return
-        if QMessageBox.question(self, "Confirmar",
-            f"Flashear {os.path.basename(self._bin_path)} en {port}?",
+            QMessageBox.warning(self, "Sin puerto", "Selecciona un puerto COM.")
+            return
+        label = "override" if self._bin_is_override else "builtin"
+        if QMessageBox.question(self, "Confirmar flash",
+            f"Flashear [{label}] en {port}?\n"
+            f"Archivo: {os.path.basename(self._bin_path)}",
             QMessageBox.Yes | QMessageBox.No) != QMessageBox.Yes:
             return
         self._btn_flash.setEnabled(False)
         self._progress.setValue(0)
-        self._log_line(f"Flasheando en {port}...", C_BLUE)
+        self._log_line(f"Flasheando [{label}] en {port}...", C_BLUE)
         self._flash_worker = FlashWorker(port, self._bin_path)
         self._flash_worker.output.connect(lambda l: self._log_line(l))
         self._flash_worker.progress.connect(self._progress.setValue)
@@ -422,7 +428,6 @@ class TabConnectivity(QWidget):
             idx = self._combo_port.findText(self._combo_port_flash.currentText())
             if idx >= 0: self._combo_port.setCurrentIndex(idx)
 
-    # ── Serial ───────────────────────────────────────────────
     def _toggle_conn(self, checked):
         if checked: self._conectar()
         else: self._desconectar()
@@ -431,7 +436,7 @@ class TabConnectivity(QWidget):
         port = self._combo_port.currentText()
         try:
             self._ser = serial.Serial(port, 9600, timeout=0.1)
-            self._lbl_conn.setText("● Conectado")
+            self._lbl_conn.setText("  Conectado")
             self._lbl_conn.setStyleSheet(f"color:{C_GREEN};font-weight:700;")
             self._btn_conn.setText("Desconectar")
             self._log_line(f"Conectado: {port}", C_TEAL)
@@ -443,21 +448,20 @@ class TabConnectivity(QWidget):
     def _desconectar(self):
         if self._ser and self._ser.is_open: self._ser.close()
         self._ser = None
-        self._lbl_conn.setText("● Desconectado")
+        self._lbl_conn.setText("  Desconectado")
         self._lbl_conn.setStyleSheet(f"color:{C_RED};font-weight:700;")
         self._btn_conn.setText("Conectar")
         self._btn_conn.setChecked(False)
 
     def _check_conn(self):
         if not self._ser or not self._ser.is_open:
-            self._log_line("Sin conexión serial.", C_RED); return False
+            self._log_line("Sin conexion serial.", C_RED); return False
         return True
 
-    # ── Pruebas ──────────────────────────────────────────────
     def _prueba_single(self, cmd, nombre, desc, timeout, tipo):
         if not self._check_conn(): return
         accent = C_TEAL if tipo == "WiFi" else C_MAUVE
-        self._log_line(f"→ [{tipo}] {nombre}", accent)
+        self._log_line(f"-> [{tipo}] {nombre}", accent)
         w = SerialWorker(self._ser, cmd, timeout)
         w.result.connect(lambda ok, ack, c, v, n=nombre, d=desc, cm=cmd, t=tipo:
                          self._on_result(ok, v, n, d, cm, t))
@@ -467,21 +471,20 @@ class TabConnectivity(QWidget):
     def _on_result(self, ok, val, nombre, desc, cmd, tipo):
         valor_str = self._fmt(cmd, val, ok)
         self._table.add_row(tipo, nombre, desc, valor_str, ok)
-        accent = C_TEAL if tipo == "WiFi" else C_MAUVE
-        self._log_line(f"← [{tipo}] {nombre}: {valor_str} — {'PASS' if ok else 'FAIL'}",
+        self._log_line(f"<- [{tipo}] {nombre}: {valor_str} — {'PASS' if ok else 'FAIL'}",
                        C_GREEN if ok else C_RED)
         self.status_msg.emit(f"[{tipo}] {nombre}: {'PASS' if ok else 'FAIL'}")
 
     def _fmt(self, cmd, val, ok):
         fmts = {
-            0x10: lambda v, o: f"{v} redes"       if o else "0 redes",
-            0x11: lambda v, o: "AP activo"          if o else "Fallo",
-            0x12: lambda v, o: "Conectado"           if o else "Fallo",
-            0x13: lambda v, o: f"{v} ms"            if o else "Sin respuesta",
+            0x10: lambda v, o: f"{v} redes"        if o else "0 redes",
+            0x11: lambda v, o: "AP activo"           if o else "Fallo",
+            0x12: lambda v, o: "Conectado"            if o else "Fallo",
+            0x13: lambda v, o: f"{v} ms"             if o else "Sin respuesta",
             0x14: lambda v, o: "OK",
-            0x20: lambda v, o: f"{v} dispositivos" if o else "Sin respuesta",
-            0x21: lambda v, o: "Advertising ON"     if o else "Fallo",
-            0x22: lambda v, o: "Detenido"            if o else "Fallo",
+            0x20: lambda v, o: f"{v} dispositivos"  if o else "Sin respuesta",
+            0x21: lambda v, o: "Advertising ON"      if o else "Fallo",
+            0x22: lambda v, o: "Detenido"             if o else "Fallo",
         }
         fn = fmts.get(cmd)
         return fn(val, ok) if fn else str(val)
@@ -513,7 +516,7 @@ class TabConnectivity(QWidget):
     def _on_seq(self, ok, val, nombre, desc, cmd, tipo):
         self._on_result(ok, val, nombre, desc, cmd, tipo)
         self._queue_idx += 1
-        delay = 800 if cmd in (0x12,) else 400
+        delay = 800 if cmd == 0x12 else 400
         QTimer.singleShot(delay, self._run_next)
 
     def _finish(self):
@@ -537,7 +540,6 @@ class TabConnectivity(QWidget):
         self._badge.hide()
         self._lbl_progress.setText("")
 
-    # ── Log ──────────────────────────────────────────────────
     def _log_line(self, msg, color=C_TEXT):
         ts = datetime.now().strftime("%H:%M:%S")
         self._log.append(
@@ -545,7 +547,6 @@ class TabConnectivity(QWidget):
             f'<span style="color:{color}">{msg}</span>')
         self._log.moveCursor(QTextCursor.End)
 
-    # ── Style helpers ─────────────────────────────────────────
     def _gs(self, accent):
         return (f"QGroupBox{{border:1px solid {C_OVERLAY};border-radius:8px;"
                 f"margin-top:10px;font-weight:bold;color:{accent};padding:8px;}}"
